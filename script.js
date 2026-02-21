@@ -1,7 +1,7 @@
 // State management
 let currentWeekNum = 10;  // Week 10 = start of March (current week)
 let currentYear = 2026;
-let todayDate = new Date(2026, 1, 20); // Feb 20, 2026
+let todayDate = new Date(); // Current date (live)
 let selectedDayForSwap = null;
 let swapModeActive = false;
 let currentEditingDay = null;
@@ -18,7 +18,21 @@ function loadAllData() {
     if (completed) completedWorkouts = JSON.parse(completed);
     
     const distances = localStorage.getItem('benrunDistances');
-    if (distances) actualDistances = JSON.parse(distances);
+    if (distances) {
+        const raw = JSON.parse(distances);
+        // Migrate: drop any old position-based keys (format: YYYY-M-weekIdx-dayIdx)
+        // New format is YYYY-M/D (e.g. 2026-2/21). Old keys had 4 segments separated by dashes.
+        const migrated = {};
+        for (const [key, val] of Object.entries(raw)) {
+            const parts = key.split('-');
+            if (parts.length === 4 && !parts[2].includes('/')) {
+                // Old format like "2026-2-2-4" — discard it
+                continue;
+            }
+            migrated[key] = val;
+        }
+        actualDistances = migrated;
+    }
 }
 
 // Save all data to localStorage
@@ -202,20 +216,23 @@ function calculateWeeklyStats() {
     let completedTotal = 0;
     
     week.days.forEach((day, dayIndex) => {
-        // Extract the actual month from the date string (handles weeks spanning two months)
-        const [dayMonth] = day.date.split('/').map(Number);
-        const distanceKey = `${currentYear}-${dayMonth}-${weekData.weekIndex}-${dayIndex}`;
+        // Use date-based key so it matches how distances are stored
+        const distanceKey = `${currentYear}-${day.date}`;
         const actualDistance = actualDistances[distanceKey];
-        
-        // Always use original planned miles for the weekly goal (not swapped workouts)
-        const originalPlannedMiles = extractMiles(day.workout);
-        if (day.workout !== 'OFF') {
-            plannedTotal += originalPlannedMiles;
+
+        // Use the swapped workout text if this slot was swapped, otherwise original
+        const swapKey = `${currentYear}-${weekData.month}-${weekData.weekIndex}-${dayIndex}`;
+        const effectiveWorkout = swappedWorkouts[swapKey] || day.workout;
+        const effectiveMiles = extractMiles(effectiveWorkout);
+
+        // Planned total uses the effective (post-swap) workout
+        if (effectiveWorkout !== 'OFF') {
+            plannedTotal += effectiveMiles;
         }
         
-        // Count completed miles - either logged actual or original planned
+        // Count completed miles - either logged actual distance or effective planned miles
         if (completedWorkouts[distanceKey]) {
-            completedTotal += actualDistance !== undefined ? actualDistance : originalPlannedMiles;
+            completedTotal += actualDistance !== undefined ? actualDistance : effectiveMiles;
         }
     });
     
@@ -355,7 +372,8 @@ function createDayElement(day, weekIndex, dayIndex, month) {
     dayDiv.dataset.dayIndex = dayIndex;
 
     // Check if completed
-    const completionKey = `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
+    // Use date-based key so completion stays with the date, not the slot
+    const completionKey = `${currentYear}-${day.date}`;
     if (completedWorkouts[completionKey]) {
         dayDiv.classList.add('completed');
     }
@@ -394,8 +412,8 @@ function createDayElement(day, weekIndex, dayIndex, month) {
     const workoutDiv = document.createElement('div');
     workoutDiv.className = 'workout-text';
     
-    // Check if actual distance was logged
-    const distanceKey = `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
+    // Use date-based key so distance stays with the date, not the slot
+    const distanceKey = `${currentYear}-${day.date}`;
     const actualDistance = actualDistances[distanceKey];
     
     if (actualDistance !== undefined) {
@@ -497,110 +515,42 @@ function initiateSwap(weekIndex, dayIndex, month) {
 
 // Perform swap
 function performSwap(fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayIndex, toMonth) {
-    console.log('=== SWAP START ===');
-    console.log('Input params:', { fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayIndex, toMonth });
-    
-    const fromSwapKey = `${currentYear}-${fromMonth}-${fromWeekIndex}-${fromDayIndex}`;
-    const toSwapKey = `${currentYear}-${toMonth}-${toWeekIndex}-${toDayIndex}`;
-    
-    // Get the correct months based on actual dates for distance keys
     const fromSchedule = scheduleData[currentYear]?.[fromMonth];
     const fromWeek = fromSchedule?.weeks[fromWeekIndex];
     const fromDay = fromWeek?.days[fromDayIndex];
-    let fromMonthForDistance = fromMonth;
-    if (fromDay) {
-        const [dateMonth] = fromDay.date.split('/').map(Number);
-        fromMonthForDistance = dateMonth;
-        console.log('From day:', fromDay.day, fromDay.date, '-> extracted month:', dateMonth);
-    }
 
     const toSchedule = scheduleData[currentYear]?.[toMonth];
     const toWeek = toSchedule?.weeks[toWeekIndex];
     const toDay = toWeek?.days[toDayIndex];
-    let toMonthForDistance = toMonth;
-    if (toDay) {
-        const [dateMonth] = toDay.date.split('/').map(Number);
-        toMonthForDistance = dateMonth;
-        console.log('To day:', toDay.day, toDay.date, '-> extracted month:', dateMonth);
-    }
-    
-    const fromDistanceKey = `${currentYear}-${fromMonthForDistance}-${fromWeekIndex}-${fromDayIndex}`;
-    const toDistanceKey = `${currentYear}-${toMonthForDistance}-${toWeekIndex}-${toDayIndex}`;
-    const fromCompletionKey = fromDistanceKey;
-    const toCompletionKey = toDistanceKey;
 
-    console.log('Distance keys:', { fromDistanceKey, toDistanceKey });
-    console.log('Current actualDistances:', actualDistances);
+    if (!fromDay || !toDay) return;
 
-    // Get the from schedule (reuse above)
-    if (!fromSchedule || !fromWeek || !fromDay) {
-        console.log('Missing from schedule data');
-        return;
-    }
-    if (!toSchedule || !toWeek || !toDay) {
-        console.log('Missing to schedule data');
-        return;
-    }
+    // Position-based keys for the workout text (which slot holds which workout)
+    const fromSwapKey = `${currentYear}-${fromMonth}-${fromWeekIndex}-${fromDayIndex}`;
+    const toSwapKey = `${currentYear}-${toMonth}-${toWeekIndex}-${toDayIndex}`;
 
-    // Swap workout text
+    // Swap workout text between slots
     const fromWorkout = swappedWorkouts[fromSwapKey] || fromDay.workout;
     const toWorkout = swappedWorkouts[toSwapKey] || toDay.workout;
-
-    console.log('Swapping workouts:', { from: fromWorkout, to: toWorkout });
-
     swappedWorkouts[fromSwapKey] = toWorkout;
     swappedWorkouts[toSwapKey] = fromWorkout;
 
-    // Swap actual distances (if they exist)
-    const fromDistance = actualDistances[fromDistanceKey];
-    const toDistance = actualDistances[toDistanceKey];
+    // Date-based keys for distances and completions
+    // The distance/completion is tied to the DATE (which never changes),
+    // so there is NOTHING to swap here — the data naturally follows the date box.
+    // No action needed for actualDistances or completedWorkouts.
 
-    console.log('Distances found:', { fromDistance, toDistance });
-
-    if (fromDistance !== undefined || toDistance !== undefined) {
-        if (fromDistance !== undefined) {
-            actualDistances[toDistanceKey] = fromDistance;
-            console.log('Moved from distance', fromDistance, 'to', toDistanceKey);
-        } else {
-            delete actualDistances[toDistanceKey];
-        }
-
-        if (toDistance !== undefined) {
-            actualDistances[fromDistanceKey] = toDistance;
-            console.log('Moved to distance', toDistance, 'to', fromDistanceKey);
-        } else {
-            delete actualDistances[fromDistanceKey];
-        }
-    }
-
-    console.log('actualDistances after swap:', actualDistances);
-
-    // Swap completion status
-    const fromCompleted = completedWorkouts[fromCompletionKey];
-    const toCompleted = completedWorkouts[toCompletionKey];
-
-    if (fromCompleted || toCompleted) {
-        if (fromCompleted) {
-            completedWorkouts[toCompletionKey] = true;
-        } else {
-            delete completedWorkouts[toCompletionKey];
-        }
-
-        if (toCompleted) {
-            completedWorkouts[fromCompletionKey] = true;
-        } else {
-            delete completedWorkouts[fromCompletionKey];
-        }
-    }
-
-    console.log('=== SWAP END ===');
     saveAllData();
     renderCalendar();
 }
 
 // Toggle completion
 function toggleCompletion(weekIndex, dayIndex, dayElement, month) {
-    const completionKey = `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
+    // Get the date string for this day so the key is date-based (not position-based)
+    const schedule = scheduleData[currentYear]?.[month];
+    const week = schedule?.weeks[weekIndex];
+    const day = week?.days[dayIndex];
+    const completionKey = day ? `${currentYear}-${day.date}` : `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
     const checkbox = dayElement.querySelector('.day-checkbox');
     
     if (completedWorkouts[completionKey]) {
@@ -625,19 +575,12 @@ function toggleCompletion(weekIndex, dayIndex, dayElement, month) {
 function openDistanceModal(weekIndex, dayIndex, workoutText, month) {
     currentEditingDay = { weekIndex, dayIndex, month };
     
-    // Get the correct month based on the actual date
+    // Use date-based key so distance is tied to the date, not the position
     const schedule = scheduleData[currentYear]?.[month];
     const week = schedule?.weeks[weekIndex];
     const day = week?.days[dayIndex];
     
-    let monthForKey = month;
-    if (day) {
-        // Extract the month from the date string (e.g., "2/21" → 2, "3/1" → 3)
-        const [dateMonth] = day.date.split('/').map(Number);
-        monthForKey = dateMonth;
-    }
-    
-    const distanceKey = `${currentYear}-${monthForKey}-${weekIndex}-${dayIndex}`;
+    const distanceKey = day ? `${currentYear}-${day.date}` : `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
     const currentDistance = actualDistances[distanceKey];
     
     const input = document.getElementById('distanceInput');
@@ -666,19 +609,12 @@ function saveDistance() {
         return;
     }
     
-    // Get the correct month based on the actual date in the day object
+    // Use date-based key so distance is tied to the date, not the position
     const schedule = scheduleData[currentYear]?.[currentEditingDay.month];
     const week = schedule?.weeks[currentEditingDay.weekIndex];
     const day = week?.days[currentEditingDay.dayIndex];
     
-    let monthForKey = currentEditingDay.month;
-    if (day) {
-        // Extract the month from the date string (e.g., "2/21" → 2, "3/1" → 3)
-        const [dateMonth] = day.date.split('/').map(Number);
-        monthForKey = dateMonth;
-    }
-    
-    const distanceKey = `${currentYear}-${monthForKey}-${currentEditingDay.weekIndex}-${currentEditingDay.dayIndex}`;
+    const distanceKey = day ? `${currentYear}-${day.date}` : `${currentYear}-${currentEditingDay.month}-${currentEditingDay.weekIndex}-${currentEditingDay.dayIndex}`;
     actualDistances[distanceKey] = distance;
     
     // Auto-mark as completed when distance is entered
@@ -771,7 +707,8 @@ function getWeeklyMileageData() {
             const weekSchedule = weekData.schedule.weeks[weekData.weekIndex];
             if (weekSchedule) {
                 weekSchedule.days.forEach((day, dayIndex) => {
-                    const distanceKey = `${currentYear}-${weekData.month}-${weekData.weekIndex}-${dayIndex}`;
+                    // Use date-based key to match how distances are stored
+                    const distanceKey = `${currentYear}-${day.date}`;
                     const actualDistance = actualDistances[distanceKey];
                     if (actualDistance) {
                         weeklyMiles += actualDistance;
