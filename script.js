@@ -202,7 +202,9 @@ function calculateWeeklyStats() {
     let completedTotal = 0;
     
     week.days.forEach((day, dayIndex) => {
-        const distanceKey = `${currentYear}-${month}-${weekData.weekIndex}-${dayIndex}`;
+        // Extract the actual month from the date string (handles weeks spanning two months)
+        const [dayMonth] = day.date.split('/').map(Number);
+        const distanceKey = `${currentYear}-${dayMonth}-${weekData.weekIndex}-${dayIndex}`;
         const actualDistance = actualDistances[distanceKey];
         
         // Always use original planned miles for the weekly goal (not swapped workouts)
@@ -495,23 +497,56 @@ function initiateSwap(weekIndex, dayIndex, month) {
 
 // Perform swap
 function performSwap(fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayIndex, toMonth) {
+    console.log('=== SWAP START ===');
+    console.log('Input params:', { fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayIndex, toMonth });
+    
     const fromSwapKey = `${currentYear}-${fromMonth}-${fromWeekIndex}-${fromDayIndex}`;
     const toSwapKey = `${currentYear}-${toMonth}-${toWeekIndex}-${toDayIndex}`;
-    const fromDistanceKey = `${currentYear}-${fromMonth}-${fromWeekIndex}-${fromDayIndex}`;
-    const toDistanceKey = `${currentYear}-${toMonth}-${toWeekIndex}-${toDayIndex}`;
+    
+    // Get the correct months based on actual dates for distance keys
+    const fromSchedule = scheduleData[currentYear]?.[fromMonth];
+    const fromWeek = fromSchedule?.weeks[fromWeekIndex];
+    const fromDay = fromWeek?.days[fromDayIndex];
+    let fromMonthForDistance = fromMonth;
+    if (fromDay) {
+        const [dateMonth] = fromDay.date.split('/').map(Number);
+        fromMonthForDistance = dateMonth;
+        console.log('From day:', fromDay.day, fromDay.date, '-> extracted month:', dateMonth);
+    }
 
-    const fromWeekData = getScheduleForWeek(currentWeekNum);
-    if (!fromWeekData || !fromWeekData.schedule) return;
+    const toSchedule = scheduleData[currentYear]?.[toMonth];
+    const toWeek = toSchedule?.weeks[toWeekIndex];
+    const toDay = toWeek?.days[toDayIndex];
+    let toMonthForDistance = toMonth;
+    if (toDay) {
+        const [dateMonth] = toDay.date.split('/').map(Number);
+        toMonthForDistance = dateMonth;
+        console.log('To day:', toDay.day, toDay.date, '-> extracted month:', dateMonth);
+    }
     
-    const fromWeek = fromWeekData.schedule.weeks[fromWeekIndex];
-    const toWeek = fromWeekData.schedule.weeks[toWeekIndex];
-    
-    const fromDay = fromWeek.days[fromDayIndex];
-    const toDay = toWeek.days[toDayIndex];
+    const fromDistanceKey = `${currentYear}-${fromMonthForDistance}-${fromWeekIndex}-${fromDayIndex}`;
+    const toDistanceKey = `${currentYear}-${toMonthForDistance}-${toWeekIndex}-${toDayIndex}`;
+    const fromCompletionKey = fromDistanceKey;
+    const toCompletionKey = toDistanceKey;
+
+    console.log('Distance keys:', { fromDistanceKey, toDistanceKey });
+    console.log('Current actualDistances:', actualDistances);
+
+    // Get the from schedule (reuse above)
+    if (!fromSchedule || !fromWeek || !fromDay) {
+        console.log('Missing from schedule data');
+        return;
+    }
+    if (!toSchedule || !toWeek || !toDay) {
+        console.log('Missing to schedule data');
+        return;
+    }
 
     // Swap workout text
     const fromWorkout = swappedWorkouts[fromSwapKey] || fromDay.workout;
     const toWorkout = swappedWorkouts[toSwapKey] || toDay.workout;
+
+    console.log('Swapping workouts:', { from: fromWorkout, to: toWorkout });
 
     swappedWorkouts[fromSwapKey] = toWorkout;
     swappedWorkouts[toSwapKey] = fromWorkout;
@@ -520,20 +555,45 @@ function performSwap(fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayI
     const fromDistance = actualDistances[fromDistanceKey];
     const toDistance = actualDistances[toDistanceKey];
 
+    console.log('Distances found:', { fromDistance, toDistance });
+
     if (fromDistance !== undefined || toDistance !== undefined) {
         if (fromDistance !== undefined) {
             actualDistances[toDistanceKey] = fromDistance;
+            console.log('Moved from distance', fromDistance, 'to', toDistanceKey);
         } else {
             delete actualDistances[toDistanceKey];
         }
 
         if (toDistance !== undefined) {
             actualDistances[fromDistanceKey] = toDistance;
+            console.log('Moved to distance', toDistance, 'to', fromDistanceKey);
         } else {
             delete actualDistances[fromDistanceKey];
         }
     }
 
+    console.log('actualDistances after swap:', actualDistances);
+
+    // Swap completion status
+    const fromCompleted = completedWorkouts[fromCompletionKey];
+    const toCompleted = completedWorkouts[toCompletionKey];
+
+    if (fromCompleted || toCompleted) {
+        if (fromCompleted) {
+            completedWorkouts[toCompletionKey] = true;
+        } else {
+            delete completedWorkouts[toCompletionKey];
+        }
+
+        if (toCompleted) {
+            completedWorkouts[fromCompletionKey] = true;
+        } else {
+            delete completedWorkouts[fromCompletionKey];
+        }
+    }
+
+    console.log('=== SWAP END ===');
     saveAllData();
     renderCalendar();
 }
@@ -564,7 +624,20 @@ function toggleCompletion(weekIndex, dayIndex, dayElement, month) {
 // Open distance modal
 function openDistanceModal(weekIndex, dayIndex, workoutText, month) {
     currentEditingDay = { weekIndex, dayIndex, month };
-    const distanceKey = `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
+    
+    // Get the correct month based on the actual date
+    const schedule = scheduleData[currentYear]?.[month];
+    const week = schedule?.weeks[weekIndex];
+    const day = week?.days[dayIndex];
+    
+    let monthForKey = month;
+    if (day) {
+        // Extract the month from the date string (e.g., "2/21" → 2, "3/1" → 3)
+        const [dateMonth] = day.date.split('/').map(Number);
+        monthForKey = dateMonth;
+    }
+    
+    const distanceKey = `${currentYear}-${monthForKey}-${weekIndex}-${dayIndex}`;
     const currentDistance = actualDistances[distanceKey];
     
     const input = document.getElementById('distanceInput');
@@ -593,7 +666,19 @@ function saveDistance() {
         return;
     }
     
-    const distanceKey = `${currentYear}-${currentEditingDay.month}-${currentEditingDay.weekIndex}-${currentEditingDay.dayIndex}`;
+    // Get the correct month based on the actual date in the day object
+    const schedule = scheduleData[currentYear]?.[currentEditingDay.month];
+    const week = schedule?.weeks[currentEditingDay.weekIndex];
+    const day = week?.days[currentEditingDay.dayIndex];
+    
+    let monthForKey = currentEditingDay.month;
+    if (day) {
+        // Extract the month from the date string (e.g., "2/21" → 2, "3/1" → 3)
+        const [dateMonth] = day.date.split('/').map(Number);
+        monthForKey = dateMonth;
+    }
+    
+    const distanceKey = `${currentYear}-${monthForKey}-${currentEditingDay.weekIndex}-${currentEditingDay.dayIndex}`;
     actualDistances[distanceKey] = distance;
     
     // Auto-mark as completed when distance is entered
