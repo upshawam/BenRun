@@ -295,11 +295,12 @@ main {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
+    justify-content: space-between;
+    gap: 4px;
     width: 100%;
     margin-top: 10px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-width: 0;
 }
 
 .swap-icon {
@@ -310,9 +311,8 @@ main {
     transition: all 0.2s ease;
     user-select: none;
     text-align: center;
-    flex: 0 0 auto;
+    flex: 0 0 18px;
     line-height: 1;
-    margin-right: auto;
 }
 
 .swap-icon:hover {
@@ -332,7 +332,7 @@ main {
     transition: all 0.2s ease;
     user-select: none;
     text-align: center;
-    flex: 0 0 auto;
+    flex: 1 0 auto;
     line-height: 1;
 }
 
@@ -373,8 +373,7 @@ main {
     background: white;
     transition: all 0.2s ease;
     font-weight: 600;
-    flex: 0 0 auto;
-    margin-left: auto;
+    flex: 0 0 22px;
 }
 
 .day-checkbox:hover {
