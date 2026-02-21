@@ -255,12 +255,13 @@ main {
     background: white;
     border: 2px solid #e0e0e0;
     border-radius: var(--border-radius);
-    padding: 12px;
+    padding: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
     position: relative;
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .day:hover {
@@ -294,14 +295,15 @@ main {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    justify-content: center;
+    gap: 6px;
     width: 100%;
     margin-top: 10px;
+    flex-wrap: wrap;
 }
 
 .swap-icon {
-    font-size: 18px;
+    font-size: 16px;
     cursor: pointer;
     padding: 0;
     border-radius: 4px;
@@ -309,6 +311,8 @@ main {
     user-select: none;
     text-align: center;
     flex: 0 0 auto;
+    line-height: 1;
+    margin-right: auto;
 }
 
 .swap-icon:hover {
@@ -321,7 +325,7 @@ main {
 }
 
 .edit-icon {
-    font-size: 18px;
+    font-size: 16px;
     cursor: pointer;
     padding: 0;
     border-radius: 4px;
@@ -329,6 +333,7 @@ main {
     user-select: none;
     text-align: center;
     flex: 0 0 auto;
+    line-height: 1;
 }
 
 .edit-icon:hover {
@@ -355,10 +360,10 @@ main {
 }
 
 .day-checkbox {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -369,6 +374,7 @@ main {
     transition: all 0.2s ease;
     font-weight: 600;
     flex: 0 0 auto;
+    margin-left: auto;
 }
 
 .day-checkbox:hover {
