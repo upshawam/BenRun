@@ -497,6 +497,8 @@ function initiateSwap(weekIndex, dayIndex, month) {
 function performSwap(fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayIndex, toMonth) {
     const fromSwapKey = `${currentYear}-${fromMonth}-${fromWeekIndex}-${fromDayIndex}`;
     const toSwapKey = `${currentYear}-${toMonth}-${toWeekIndex}-${toDayIndex}`;
+    const fromDistanceKey = `${currentYear}-${fromMonth}-${fromWeekIndex}-${fromDayIndex}`;
+    const toDistanceKey = `${currentYear}-${toMonth}-${toWeekIndex}-${toDayIndex}`;
 
     const fromWeekData = getScheduleForWeek(currentWeekNum);
     if (!fromWeekData || !fromWeekData.schedule) return;
@@ -507,11 +509,30 @@ function performSwap(fromWeekIndex, fromDayIndex, fromMonth, toWeekIndex, toDayI
     const fromDay = fromWeek.days[fromDayIndex];
     const toDay = toWeek.days[toDayIndex];
 
+    // Swap workout text
     const fromWorkout = swappedWorkouts[fromSwapKey] || fromDay.workout;
     const toWorkout = swappedWorkouts[toSwapKey] || toDay.workout;
 
     swappedWorkouts[fromSwapKey] = toWorkout;
     swappedWorkouts[toSwapKey] = fromWorkout;
+
+    // Swap actual distances (if they exist)
+    const fromDistance = actualDistances[fromDistanceKey];
+    const toDistance = actualDistances[toDistanceKey];
+
+    if (fromDistance !== undefined || toDistance !== undefined) {
+        if (fromDistance !== undefined) {
+            actualDistances[toDistanceKey] = fromDistance;
+        } else {
+            delete actualDistances[toDistanceKey];
+        }
+
+        if (toDistance !== undefined) {
+            actualDistances[fromDistanceKey] = toDistance;
+        } else {
+            delete actualDistances[fromDistanceKey];
+        }
+    }
 
     saveAllData();
     renderCalendar();
