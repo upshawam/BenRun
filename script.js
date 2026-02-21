@@ -8,6 +8,7 @@ let currentEditingDay = null;
 let swappedWorkouts = {};
 let completedWorkouts = {};
 let actualDistances = {};
+let blankWeekGoals = {}; // Store weekly mileage goals for blank weeks
 
 // Load all data from localStorage
 function loadAllData() {
@@ -33,6 +34,9 @@ function loadAllData() {
         }
         actualDistances = migrated;
     }
+    
+    const goals = localStorage.getItem('benrunBlankWeekGoals');
+    if (goals) blankWeekGoals = JSON.parse(goals);
 }
 
 // Save all data to localStorage
@@ -40,6 +44,7 @@ function saveAllData() {
     localStorage.setItem('benrunSwaps', JSON.stringify(swappedWorkouts));
     localStorage.setItem('benrunCompleted', JSON.stringify(completedWorkouts));
     localStorage.setItem('benrunDistances', JSON.stringify(actualDistances));
+    localStorage.setItem('benrunBlankWeekGoals', JSON.stringify(blankWeekGoals));
 }
 
 // Get current schedule
@@ -205,15 +210,33 @@ function extractMiles(workoutStr) {
 // Calculate weekly stats
 function calculateWeeklyStats() {
     const weekData = getScheduleForWeek(currentWeekNum);
+    
+    let plannedTotal = 0;
+    let completedTotal = 0;
+    
     if (!weekData || !weekData.schedule) {
-        return { completed: 0, planned: 0 };
+        // Blank week - use manually set goal if available
+        const weekKey = `${currentYear}-${currentWeekNum}`;
+        plannedTotal = blankWeekGoals[weekKey] || 0;
+        
+        // Only count completed miles from checked days
+        const weekDates = getDatesForWeek(currentWeekNum);
+        if (weekDates) {
+            weekDates.forEach(dateStr => {
+                const distanceKey = `${currentYear}-${dateStr}`;
+                const actualDistance = actualDistances[distanceKey];
+                
+                // Only add to completed if marked as complete AND has a logged distance
+                if (completedWorkouts[distanceKey] && actualDistance !== undefined) {
+                    completedTotal += actualDistance;
+                }
+            });
+        }
+        return { completed: completedTotal, planned: plannedTotal };
     }
     
     const week = weekData.schedule.weeks[weekData.weekIndex];
     const month = weekData.month;
-    
-    let plannedTotal = 0;
-    let completedTotal = 0;
     
     week.days.forEach((day, dayIndex) => {
         // Use date-based key so it matches how distances are stored
@@ -295,9 +318,17 @@ function createBlankWeekElement(weekNum) {
     const weekDiv = document.createElement('div');
     weekDiv.className = 'week';
     
+    const weekKey = `${currentYear}-${weekNum}`;
+    const weekGoal = blankWeekGoals[weekKey] || 0;
+    
     const title = document.createElement('div');
     title.className = 'week-title';
-    title.innerHTML = `<div>Week ${weekNum} (No scheduled workouts)</div>`;
+    title.innerHTML = `
+        <div>Week ${weekNum} (No scheduled workouts)</div>
+        <div class="week-total" style="cursor: pointer; text-decoration: underline;" onclick="setBlankWeekGoal(${weekNum})" title="Click to set weekly goal">
+            Goal: ${weekGoal} mi
+        </div>
+    `;
     
     const daysGrid = document.createElement('div');
     daysGrid.className = 'days-grid';
@@ -324,11 +355,74 @@ function createBlankWeekElement(weekNum) {
         dayContent.className = 'day-content';
         const workoutDiv = document.createElement('div');
         workoutDiv.className = 'workout-text';
-        workoutDiv.textContent = '—';
+        
+        // Check if there's a logged distance for this date
+        if (dateStr) {
+            const distanceKey = `${currentYear}-${dateStr}`;
+            const actualDistance = actualDistances[distanceKey];
+            if (actualDistance !== undefined) {
+                workoutDiv.textContent = `${actualDistance.toFixed(1)} mi ✓`;
+            } else {
+                workoutDiv.textContent = '—';
+            }
+        } else {
+            workoutDiv.textContent = '—';
+        }
+        
         dayContent.appendChild(workoutDiv);
+        
+        // Add footer with icons
+        const dayFooter = document.createElement('div');
+        dayFooter.className = 'day-footer';
+        
+        const swapIcon = document.createElement('div');
+        swapIcon.className = 'swap-icon';
+        swapIcon.textContent = '🔄';
+        swapIcon.title = 'Swap workout';
+        swapIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // For blank weeks, we need special handling since there's no month/weekIndex in schedule data
+            alert('Swap not available for blank weeks yet');
+        });
+        
+        const editIcon = document.createElement('div');
+        editIcon.className = 'edit-icon';
+        editIcon.textContent = '✏️';
+        editIcon.title = 'Log distance';
+        editIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (dateStr) {
+                openDistanceModalForBlankDay(dateStr);
+            }
+        });
+        
+        // Create checkbox
+        const checkbox = document.createElement('div');
+        checkbox.className = 'day-checkbox';
+        if (dateStr) {
+            const completionKey = `${currentYear}-${dateStr}`;
+            if (completedWorkouts[completionKey]) {
+                checkbox.classList.add('checked');
+                checkbox.textContent = '✓';
+            } else {
+                checkbox.classList.add('unchecked');
+                checkbox.textContent = '';
+            }
+            checkbox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleCompletionForBlankDay(dateStr, checkbox);
+            });
+        } else {
+            checkbox.classList.add('unchecked');
+        }
+        
+        dayFooter.appendChild(swapIcon);
+        dayFooter.appendChild(editIcon);
+        dayFooter.appendChild(checkbox);
         
         dayDiv.appendChild(dayHeader);
         dayDiv.appendChild(dayContent);
+        dayDiv.appendChild(dayFooter);
         daysGrid.appendChild(dayDiv);
     });
     
@@ -601,6 +695,12 @@ function closeDistanceModal() {
 function saveDistance() {
     if (!currentEditingDay) return;
     
+    // Handle blank day separately
+    if (currentEditingDay.isBlankDay) {
+        saveDistanceForBlankDay();
+        return;
+    }
+    
     const input = document.getElementById('distanceInput');
     const distance = parseFloat(input.value);
     
@@ -623,6 +723,83 @@ function saveDistance() {
     
     saveAllData();
     closeDistanceModal();
+    renderCalendar();
+}
+
+// Open distance modal for blank week days
+function openDistanceModalForBlankDay(dateStr) {
+    currentEditingDay = { dateStr, isBlankDay: true };
+    
+    const distanceKey = `${currentYear}-${dateStr}`;
+    const currentDistance = actualDistances[distanceKey];
+    
+    const input = document.getElementById('distanceInput');
+    input.value = currentDistance || '';
+    input.focus();
+    
+    const modal = document.getElementById('distanceModal');
+    modal.classList.remove('hidden');
+}
+
+// Save distance for blank week days
+function saveDistanceForBlankDay() {
+    if (!currentEditingDay || !currentEditingDay.isBlankDay) return;
+    
+    const input = document.getElementById('distanceInput');
+    const distance = parseFloat(input.value);
+    
+    if (isNaN(distance) || distance < 0) {
+        alert('Please enter a valid distance');
+        return;
+    }
+    
+    const distanceKey = `${currentYear}-${currentEditingDay.dateStr}`;
+    actualDistances[distanceKey] = distance;
+    
+    // Auto-mark as completed when distance is entered
+    completedWorkouts[distanceKey] = true;
+    
+    saveAllData();
+    closeDistanceModal();
+    renderCalendar();
+}
+
+// Toggle completion for blank week days
+function toggleCompletionForBlankDay(dateStr, checkbox) {
+    const completionKey = `${currentYear}-${dateStr}`;
+    
+    if (completedWorkouts[completionKey]) {
+        delete completedWorkouts[completionKey];
+        checkbox.classList.remove('checked');
+        checkbox.classList.add('unchecked');
+        checkbox.textContent = '';
+    } else {
+        completedWorkouts[completionKey] = true;
+        checkbox.classList.remove('unchecked');
+        checkbox.classList.add('checked');
+        checkbox.textContent = '✓';
+    }
+    
+    saveAllData();
+    updateProgressBar();
+}
+
+// Set blank week goal
+function setBlankWeekGoal(weekNum) {
+    const weekKey = `${currentYear}-${weekNum}`;
+    const currentGoal = blankWeekGoals[weekKey] || 0;
+    
+    const newGoal = prompt(`Set weekly mileage goal for Week ${weekNum}:`, currentGoal);
+    if (newGoal === null) return; // Cancelled
+    
+    const goalMiles = parseFloat(newGoal);
+    if (isNaN(goalMiles) || goalMiles < 0) {
+        alert('Please enter a valid mileage goal');
+        return;
+    }
+    
+    blankWeekGoals[weekKey] = goalMiles;
+    saveAllData();
     renderCalendar();
 }
 
