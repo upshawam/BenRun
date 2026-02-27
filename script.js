@@ -896,7 +896,7 @@ function getWeeklyMileageData() {
             }
         }
         
-        data.push({ week, miles: weeklyMiles });
+        data.push({ week: week, miles: weeklyMiles, weekNum: week });
     }
     
     return data;
@@ -984,6 +984,154 @@ function drawMileageChart() {
         ctx.arc(x, y, 4, 0, Math.PI * 2);
         ctx.fill();
     });
+    
+    // Store point locations for hover and click detection
+    canvas.chartPoints = data.map((point, index) => {
+        const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
+        const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+        return { x, y, miles: point.miles, weekNum: point.weekNum };
+    });
+    
+    // Make canvas interactive
+    canvas.style.cursor = 'default';
+    
+    canvas.onmousemove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        let hoveredPoint = null;
+        for (const point of canvas.chartPoints) {
+            const distance = Math.sqrt((mouseX - point.x) ** 2 + (mouseY - point.y) ** 2);
+            if (distance < 40) { // 40px hover radius - much larger for easier clicking
+                hoveredPoint = point;
+                break;
+            }
+        }
+        
+        if (hoveredPoint) {
+            canvas.style.cursor = 'pointer';
+            // Draw tooltip
+            drawTooltip(ctx, hoveredPoint, canvas);
+        } else {
+            canvas.style.cursor = 'default';
+            redrawChart();
+        }
+    };
+    
+    canvas.onclick = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        for (const point of canvas.chartPoints) {
+            const distance = Math.sqrt((mouseX - point.x) ** 2 + (mouseY - point.y) ** 2);
+            if (distance < 40) {
+                currentWeekNum = point.weekNum;
+                renderCalendar();
+                break;
+            }
+        }
+    };
+    
+    function drawTooltip(ctx, point, canvas) {
+        // Redraw the chart first
+        redrawChart();
+        
+        // Draw tooltip
+        const tooltipWidth = 100;
+        const tooltipHeight = 40;
+        let tooltipX = point.x - tooltipWidth / 2;
+        let tooltipY = point.y - tooltipHeight - 15;
+        
+        // Keep tooltip within canvas bounds
+        if (tooltipX < 10) tooltipX = 10;
+        if (tooltipX + tooltipWidth > canvas.width) tooltipX = canvas.width - tooltipWidth - 10;
+        if (tooltipY < 10) tooltipY = point.y + 20;
+        
+        // Draw tooltip background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
+        
+        // Draw tooltip text
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(point.miles.toFixed(1) + ' mi', tooltipX + tooltipWidth / 2, tooltipY + 15);
+        ctx.font = '12px sans-serif';
+        ctx.fillText('Week ' + point.weekNum, tooltipX + tooltipWidth / 2, tooltipY + 28);
+        
+        // Highlight the hovered point
+        ctx.fillStyle = '#e74c3c';
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    function redrawChart() {
+        // Redraw just the chart without tooltips
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Redraw grid
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 5; i++) {
+            const y = padding + (chartHeight / 5) * i;
+            ctx.beginPath();
+            ctx.moveTo(padding, y);
+            ctx.lineTo(canvas.width - padding, y);
+            ctx.stroke();
+        }
+        
+        // Redraw axes
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(padding, padding);
+        ctx.lineTo(padding, canvas.height - padding);
+        ctx.lineTo(canvas.width - padding, canvas.height - padding);
+        ctx.stroke();
+        
+        // Redraw Y-axis labels
+        ctx.fillStyle = '#666';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 5; i++) {
+            const y = padding + (chartHeight / 5) * i;
+            const miles = Math.round((maxMiles / 5) * (5 - i));
+            ctx.fillText(miles + 'mi', padding - 10, y + 4);
+        }
+        
+        // Redraw line
+        ctx.strokeStyle = '#667eea';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        
+        data.forEach((point, index) => {
+            const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
+            const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+            
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        
+        ctx.stroke();
+        
+        // Redraw points
+        ctx.fillStyle = '#667eea';
+        data.forEach((point, index) => {
+            const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
+            const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+            
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
 }
 
 // Initialize
