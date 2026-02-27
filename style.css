@@ -45,6 +45,7 @@ header h1 {
     font-size: 28px;
     margin-bottom: 15px;
     font-weight: 600;
+    display: none;
 }
 
 .month-selector {
@@ -114,7 +115,7 @@ header h1 {
 .month-title {
     font-size: 18px;
     font-weight: 600;
-    display: block;
+    display: none;
     margin: 10px 0;
 }
 

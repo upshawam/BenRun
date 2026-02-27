@@ -846,7 +846,7 @@ function setupNavigation() {
         if (month) {
             currentWeekNum = getFirstWeekOfMonth(month);
             renderCalendar();
-            e.target.value = ''; // Reset dropdown
+            // Keep the selected month in the dropdown - don't reset it
         }
     });
 
