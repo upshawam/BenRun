@@ -9,6 +9,7 @@ let swappedWorkouts = {};
 let completedWorkouts = {};
 let actualDistances = {};
 let blankWeekGoals = {}; // Store weekly mileage goals for blank weeks
+let chartEndWeek = null; // For the 12-week mileage chart - initialized on load
 
 // Load all data from localStorage
 function loadAllData() {
@@ -114,6 +115,21 @@ function getStartDateForWeek(weekNum, year = 2026) {
         49: '11/30', 50: '12/7', 51: '12/14', 52: '12/21'
     };
     return weekStarts[weekNum] || null;
+}
+
+// Get the end date for a given week number
+function getEndDateForWeek(weekNum, year = 2026) {
+    const startDateStr = getStartDateForWeek(weekNum);
+    if (!startDateStr) return null;
+    
+    const [month, day] = startDateStr.split('/').map(Number);
+    const startDate = new Date(year, month - 1, day);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 6); // 7 days later
+    
+    const m = endDate.getMonth() + 1;
+    const d = endDate.getDate();
+    return `${m}/${d}`;
 }
 
 // Get array of dates for a given week number
@@ -850,6 +866,23 @@ function setupNavigation() {
         }
     });
 
+    // Chart navigation handlers
+    document.getElementById('chartPrevBtn').onclick = () => {
+        if (chartEndWeek && chartEndWeek > 12) {
+            chartEndWeek -= 1;
+            drawMileageChart();
+        }
+    };
+
+    document.getElementById('chartNextBtn').onclick = () => {
+        const currentWeek = findCurrentWeek() || currentWeekNum;
+        // Can't go forward past current week (only lookback allowed)
+        if (chartEndWeek < currentWeek) {
+            chartEndWeek += 1;
+            drawMileageChart();
+        }
+    };
+
     // Distance modal controls
     document.querySelector('.close').onclick = closeDistanceModal;
     document.getElementById('cancelDistance').onclick = closeDistanceModal;
@@ -871,12 +904,12 @@ function setupNavigation() {
 }
 
 // Get weekly mileage for the past 12 weeks
-function getWeeklyMileageData() {
+function getWeeklyMileageData(endWeek = null) {
     const data = [];
-    const endWeek = currentWeekNum;
-    const startWeek = Math.max(1, endWeek - 11); // Last 12 weeks
+    const finalEndWeek = endWeek || chartEndWeek || currentWeekNum;
+    const startWeek = Math.max(1, finalEndWeek - 11); // Last 12 weeks
     
-    for (let week = startWeek; week <= endWeek; week++) {
+    for (let week = startWeek; week <= finalEndWeek; week++) {
         let weeklyMiles = 0;
         
         const weekData = getScheduleForWeek(week);
@@ -886,11 +919,14 @@ function getWeeklyMileageData() {
                 weekSchedule.days.forEach((day, dayIndex) => {
                     // Use date-based key to match how distances are stored
                     const distanceKey = `${currentYear}-${day.date}`;
-                    const actualDistance = actualDistances[distanceKey];
-                    if (actualDistance) {
-                        weeklyMiles += actualDistance;
-                    } else if (!day.offDay) {
-                        weeklyMiles += extractMiles(day.workout);
+                    // Only count miles if the workout is completed (checked off)
+                    if (completedWorkouts[distanceKey]) {
+                        const actualDistance = actualDistances[distanceKey];
+                        if (actualDistance) {
+                            weeklyMiles += actualDistance;
+                        } else if (!day.offDay) {
+                            weeklyMiles += extractMiles(day.workout);
+                        }
                     }
                 });
             }
@@ -908,23 +944,42 @@ function drawMileageChart() {
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
-    const data = getWeeklyMileageData();
+    const data = getWeeklyMileageData(chartEndWeek);
     
-    // Set canvas size
+    // Update date range display
+    if (data.length >= 2) {
+        const startWeek = data[0].weekNum;
+        const endWeek = data[data.length - 1].weekNum;
+        const startDate = getStartDateForWeek(startWeek);
+        const endDate = getEndDateForWeek(endWeek);
+        document.getElementById('chartDateRange').textContent = `${startDate} - ${endDate}`;
+    }
+    
+    // Set canvas size with DPI scaling for sharp text
     const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = 250;
+    const dpr = window.devicePixelRatio || 1;
+    
+    canvas.width = rect.width * dpr;
+    canvas.height = 250 * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = '250px';
+    
+    // Scale the context to match device pixel ratio
+    ctx.scale(dpr, dpr);
     
     const padding = 40;
-    const chartWidth = canvas.width - padding * 2;
-    const chartHeight = canvas.height - padding * 2;
+    const chartWidth = (rect.width - padding * 2);
+    const chartHeight = (250 - padding * 2);
+    
+    const scaledWidth = rect.width;
+    const scaledHeight = 250;
     
     // Find max mileage for scaling
     const maxMiles = Math.max(...data.map(d => d.miles), 30); // At least 30 as min scale
     
     // Clear canvas
     ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, scaledWidth, scaledHeight);
     
     // Draw grid lines
     ctx.strokeStyle = '#e0e0e0';
@@ -933,7 +988,7 @@ function drawMileageChart() {
         const y = padding + (chartHeight / 5) * i;
         ctx.beginPath();
         ctx.moveTo(padding, y);
-        ctx.lineTo(canvas.width - padding, y);
+        ctx.lineTo(scaledWidth - padding, y);
         ctx.stroke();
     }
     
@@ -942,13 +997,13 @@ function drawMileageChart() {
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(padding, padding);
-    ctx.lineTo(padding, canvas.height - padding);
-    ctx.lineTo(canvas.width - padding, canvas.height - padding);
+    ctx.lineTo(padding, scaledHeight - padding);
+    ctx.lineTo(scaledWidth - padding, scaledHeight - padding);
     ctx.stroke();
     
     // Draw Y-axis labels
     ctx.fillStyle = '#666';
-    ctx.font = '12px sans-serif';
+    ctx.font = '14px sans-serif';
     ctx.textAlign = 'right';
     for (let i = 0; i <= 5; i++) {
         const y = padding + (chartHeight / 5) * i;
@@ -963,7 +1018,7 @@ function drawMileageChart() {
     
     data.forEach((point, index) => {
         const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
-        const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+        const y = scaledHeight - padding - (point.miles / maxMiles) * chartHeight;
         
         if (index === 0) {
             ctx.moveTo(x, y);
@@ -978,7 +1033,7 @@ function drawMileageChart() {
     ctx.fillStyle = '#667eea';
     data.forEach((point, index) => {
         const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
-        const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+        const y = scaledHeight - padding - (point.miles / maxMiles) * chartHeight;
         
         ctx.beginPath();
         ctx.arc(x, y, 4, 0, Math.PI * 2);
@@ -988,7 +1043,7 @@ function drawMileageChart() {
     // Store point locations for hover and click detection
     canvas.chartPoints = data.map((point, index) => {
         const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
-        const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+        const y = scaledHeight - padding - (point.miles / maxMiles) * chartHeight;
         return { x, y, miles: point.miles, weekNum: point.weekNum };
     });
     
@@ -1055,11 +1110,11 @@ function drawMileageChart() {
         
         // Draw tooltip text
         ctx.fillStyle = 'white';
-        ctx.font = 'bold 14px sans-serif';
+        ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto';
         ctx.textAlign = 'center';
-        ctx.fillText(point.miles.toFixed(1) + ' mi', tooltipX + tooltipWidth / 2, tooltipY + 15);
-        ctx.font = '12px sans-serif';
-        ctx.fillText('Week ' + point.weekNum, tooltipX + tooltipWidth / 2, tooltipY + 28);
+        ctx.fillText(point.miles.toFixed(1) + ' mi', tooltipX + tooltipWidth / 2, tooltipY + 16);
+        ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto';
+        ctx.fillText('Week ' + point.weekNum, tooltipX + tooltipWidth / 2, tooltipY + 30);
         
         // Highlight the hovered point
         ctx.fillStyle = '#e74c3c';
@@ -1071,7 +1126,7 @@ function drawMileageChart() {
     function redrawChart() {
         // Redraw just the chart without tooltips
         ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, scaledWidth, scaledHeight);
         
         // Redraw grid
         ctx.strokeStyle = '#e0e0e0';
@@ -1080,7 +1135,7 @@ function drawMileageChart() {
             const y = padding + (chartHeight / 5) * i;
             ctx.beginPath();
             ctx.moveTo(padding, y);
-            ctx.lineTo(canvas.width - padding, y);
+            ctx.lineTo(scaledWidth - padding, y);
             ctx.stroke();
         }
         
@@ -1089,13 +1144,13 @@ function drawMileageChart() {
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(padding, padding);
-        ctx.lineTo(padding, canvas.height - padding);
-        ctx.lineTo(canvas.width - padding, canvas.height - padding);
+        ctx.lineTo(padding, scaledHeight - padding);
+        ctx.lineTo(scaledWidth - padding, scaledHeight - padding);
         ctx.stroke();
         
         // Redraw Y-axis labels
         ctx.fillStyle = '#666';
-        ctx.font = '12px sans-serif';
+        ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto';
         ctx.textAlign = 'right';
         for (let i = 0; i <= 5; i++) {
             const y = padding + (chartHeight / 5) * i;
@@ -1110,7 +1165,7 @@ function drawMileageChart() {
         
         data.forEach((point, index) => {
             const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
-            const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+            const y = scaledHeight - padding - (point.miles / maxMiles) * chartHeight;
             
             if (index === 0) {
                 ctx.moveTo(x, y);
@@ -1125,7 +1180,7 @@ function drawMileageChart() {
         ctx.fillStyle = '#667eea';
         data.forEach((point, index) => {
             const x = padding + (chartWidth / (data.length - 1 || 1)) * index;
-            const y = canvas.height - padding - (point.miles / maxMiles) * chartHeight;
+            const y = scaledHeight - padding - (point.miles / maxMiles) * chartHeight;
             
             ctx.beginPath();
             ctx.arc(x, y, 4, 0, Math.PI * 2);
@@ -1143,6 +1198,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentWeek) {
         currentWeekNum = currentWeek;
     }
+    
+    // Initialize chart to show last 12 weeks from current week
+    chartEndWeek = currentWeekNum;
     
     setupNavigation();
     renderCalendar();

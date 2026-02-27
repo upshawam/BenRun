@@ -67,7 +67,14 @@
             </div>
 
             <div class="mileage-chart-section">
-                <h2>12-Week Mileage Trend</h2>
+                <div class="chart-header">
+                    <h2>12-Week Mileage Trend</h2>
+                    <div class="chart-nav">
+                        <button id="chartPrevBtn" class="chart-nav-btn">← Previous</button>
+                        <span id="chartDateRange" class="chart-date-range"></span>
+                        <button id="chartNextBtn" class="chart-nav-btn">Next →</button>
+                    </div>
+                </div>
                 <canvas id="mileageChart"></canvas>
             </div>
         </main>
