@@ -5,8 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ben's Running Schedule</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+    <!-- Login/Auth Section -->
+    <div id="authContainer" class="auth-container">
+        <div class="auth-modal">
+            <h1>Ben's Running Schedule</h1>
+            <div id="authForm">
+                <h2 id="authModeTitle">Sign In</h2>
+                <div class="auth-form-group">
+                    <label for="authEmail">Email:</label>
+                    <input type="email" id="authEmail" placeholder="your@email.com">
+                </div>
+                <div class="auth-form-group">
+                    <label for="authPassword">Password:</label>
+                    <input type="password" id="authPassword" placeholder="Password">
+                </div>
+                <button id="authSubmitBtn" class="auth-btn">Sign In</button>
+                <p id="authError" class="auth-error"></p>
+                <p class="auth-toggle">
+                    Don't have an account? <button id="toggleAuthMode" class="auth-toggle-btn">Create one</button>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Section (hidden until logged in) -->
+    <div id="appContainer" class="app-container hidden">
     <div class="container">
         <header>
             <h1>Running Schedule</h1>
@@ -82,8 +108,10 @@
             </div>
         </main>
     </div>
+    </div>
 
     <script src="data.js"></script>
+    <script src="supabase-config.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -24,6 +24,132 @@ body {
     padding: 10px;
 }
 
+/* Auth UI */
+.auth-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.auth-container.hidden {
+    display: none;
+}
+
+.auth-modal {
+    background: white;
+    padding: 40px;
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    width: 100%;
+    max-width: 400px;
+}
+
+.auth-modal h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    color: var(--dark-text);
+    font-size: 28px;
+}
+
+.auth-form-group {
+    margin-bottom: 20px;
+}
+
+.auth-form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--dark-text);
+}
+
+.auth-form-group input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.auth-form-group input:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.auth-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 10px;
+    transition: background 0.2s;
+}
+
+.auth-btn:hover {
+    background: #2980b9;
+}
+
+.auth-btn-secondary {
+    background: #95a5a6;
+}
+
+.auth-btn-secondary:hover {
+    background: #7f8c8d;
+}
+
+.auth-error {
+    color: var(--danger-color);
+    text-align: center;
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+.auth-toggle {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 14px;
+    color: #7f8c8d;
+}
+
+.auth-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--secondary-color);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 0;
+}
+
+.auth-toggle-btn:hover {
+    color: #2980b9;
+}
+
+#authModeTitle {
+    text-align: center;
+    margin-bottom: 20px;
+    color: var(--dark-text);
+    font-size: 20px;
+}
+
+.app-container {
+    display: block;
+}
+
+.app-container.hidden {
+    display: none;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 auto;

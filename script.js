@@ -1,3 +1,71 @@
+// Initialize auth and app
+let currentUser = null;
+let isSignUpMode = false;
+
+// Initialize auth and app
+async function initializeApp() {
+    // Check if user is logged in
+    const session = await checkAuth();
+    
+    if (session) {
+        currentUser = session.user;
+        
+        // Migrate any localStorage data to Supabase on first login
+        await migrateLocalStorageToSupabase(currentUser.id);
+        
+        showApp();
+        await loadAllData();
+        
+        // Navigate to current week on page load
+        const currentWeek = findCurrentWeek();
+        if (currentWeek) {
+            currentWeekNum = currentWeek;
+        }
+        
+        // Initialize chart to show last 12 weeks from current week
+        chartEndWeek = currentWeekNum;
+        
+        setupNavigation();
+        renderCalendar();
+        drawMileageChart();
+        window.addEventListener('resize', drawMileageChart);
+    } else {
+        showAuth();
+    }
+}
+
+function showAuth() {
+    document.getElementById('authContainer').classList.remove('hidden');
+    document.getElementById('appContainer').classList.add('hidden');
+}
+
+function showApp() {
+    document.getElementById('authContainer').classList.add('hidden');
+    document.getElementById('appContainer').classList.remove('hidden');
+}
+
+function switchAuthMode(toSignUp) {
+    isSignUpMode = toSignUp;
+    const modeTitle = document.getElementById('authModeTitle');
+    const submitBtn = document.getElementById('authSubmitBtn');
+    const toggleBtn = document.getElementById('toggleAuthMode');
+    const toggleText = document.querySelector('.auth-toggle');
+    
+    if (toSignUp) {
+        modeTitle.textContent = 'Create Account';
+        submitBtn.textContent = 'Create Account';
+        toggleText.innerHTML = 'Already have an account? <button id="toggleAuthMode" class="auth-toggle-btn">Sign in</button>';
+        document.getElementById('toggleAuthMode').addEventListener('click', () => switchAuthMode(false));
+    } else {
+        modeTitle.textContent = 'Sign In';
+        submitBtn.textContent = 'Sign In';
+        toggleText.innerHTML = "Don't have an account? <button id=\"toggleAuthMode\" class=\"auth-toggle-btn\">Create one</button>";
+        document.getElementById('toggleAuthMode').addEventListener('click', () => switchAuthMode(true));
+    }
+    
+    document.getElementById('authError').textContent = '';
+}
+
 // State management
 let currentWeekNum = 10;  // Week 10 = start of March (current week)
 let currentYear = 2026;
@@ -13,44 +81,55 @@ let blankWeekWorkouts = {}; // Store custom workout descriptions for blank week 
 let chartEndWeek = null; // For the 12-week mileage chart - initialized on load
 
 // Load all data from localStorage
-function loadAllData() {
-    const swaps = localStorage.getItem('benrunSwaps');
-    if (swaps) swappedWorkouts = JSON.parse(swaps);
+async function loadAllData() {
+    if (!currentUser) return;
     
-    const completed = localStorage.getItem('benrunCompleted');
-    if (completed) completedWorkouts = JSON.parse(completed);
+    // Load from Supabase
+    const completedData = await loadCompletedWorkouts(currentUser.id);
+    actualDistances = await loadActualDistances(currentUser.id);
+    blankWeekGoals = await loadBlankWeekGoals(currentUser.id);
+    blankWeekWorkouts = await loadBlankWeekWorkouts(currentUser.id);
+    swappedWorkouts = await loadSwappedWorkouts(currentUser.id);
     
-    const distances = localStorage.getItem('benrunDistances');
-    if (distances) {
-        const raw = JSON.parse(distances);
-        // Migrate: drop any old position-based keys (format: YYYY-M-weekIdx-dayIdx)
-        // New format is YYYY-M/D (e.g. 2026-2/21). Old keys had 4 segments separated by dashes.
-        const migrated = {};
-        for (const [key, val] of Object.entries(raw)) {
-            const parts = key.split('-');
-            if (parts.length === 4 && !parts[2].includes('/')) {
-                // Old format like "2026-2-2-4" — discard it
-                continue;
-            }
-            migrated[key] = val;
+    // Filter out false values - only keep true entries
+    completedWorkouts = {};
+    for (const [key, value] of Object.entries(completedData)) {
+        if (value === true) {
+            completedWorkouts[key] = true;
         }
-        actualDistances = migrated;
     }
-    
-    const goals = localStorage.getItem('benrunBlankWeekGoals');
-    if (goals) blankWeekGoals = JSON.parse(goals);
-    
-    const workouts = localStorage.getItem('benrunBlankWeekWorkouts');
-    if (workouts) blankWeekWorkouts = JSON.parse(workouts);
 }
 
-// Save all data to localStorage
-function saveAllData() {
-    localStorage.setItem('benrunSwaps', JSON.stringify(swappedWorkouts));
-    localStorage.setItem('benrunCompleted', JSON.stringify(completedWorkouts));
-    localStorage.setItem('benrunDistances', JSON.stringify(actualDistances));
-    localStorage.setItem('benrunBlankWeekGoals', JSON.stringify(blankWeekGoals));
-    localStorage.setItem('benrunBlankWeekWorkouts', JSON.stringify(blankWeekWorkouts));
+// Save all data to Supabase
+async function saveAllData() {
+    if (!currentUser) return;
+    
+    const userId = currentUser.id;
+    
+    // Save swapped workouts
+    for (const [weekKey, swapData] of Object.entries(swappedWorkouts)) {
+        await saveSwappedWorkout(userId, weekKey, swapData);
+    }
+    
+    // Save completed workouts
+    for (const [dateKey, workout] of Object.entries(completedWorkouts)) {
+        await saveCompletedWorkout(userId, dateKey, workout);
+    }
+    
+    // Save actual distances
+    for (const [dateKey, distance] of Object.entries(actualDistances)) {
+        await saveActualDistance(userId, dateKey, distance);
+    }
+    
+    // Save blank week goals
+    for (const [weekKey, goal] of Object.entries(blankWeekGoals)) {
+        await saveBlankWeekGoal(userId, weekKey, goal);
+    }
+    
+    // Save blank week workouts
+    for (const [weekKey, workout] of Object.entries(blankWeekWorkouts)) {
+        await saveBlankWeekWorkout(userId, weekKey, workout);
+    }
 }
 
 // Get current schedule
@@ -685,7 +764,7 @@ function toggleCompletion(weekIndex, dayIndex, dayElement, month) {
     const checkbox = dayElement.querySelector('.day-checkbox');
     
     if (completedWorkouts[completionKey]) {
-        delete completedWorkouts[completionKey];
+        completedWorkouts[completionKey] = false;
         dayElement.classList.remove('completed');
         checkbox.classList.remove('checked');
         checkbox.classList.add('unchecked');
@@ -1245,19 +1324,82 @@ function drawMileageChart() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    loadAllData();
+    // Set up auth handlers
+    document.getElementById('authSubmitBtn').addEventListener('click', handleAuthSubmit);
+    document.getElementById('toggleAuthMode').addEventListener('click', () => switchAuthMode(!isSignUpMode));
     
-    // Navigate to current week on page load
-    const currentWeek = findCurrentWeek();
-    if (currentWeek) {
-        currentWeekNum = currentWeek;
+    // Initialize the app
+    initializeApp();
+});
+
+async function handleSignIn() {
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    const errorEl = document.getElementById('authError');
+    
+    if (!email || !password) {
+        errorEl.textContent = 'Please enter email and password';
+        return;
     }
     
-    // Initialize chart to show last 12 weeks from current week
-    chartEndWeek = currentWeekNum;
+    const { data, error } = await signIn(email, password);
+    if (error) {
+        errorEl.textContent = error.message;
+    } else {
+        currentUser = data.user;
+        await migrateLocalStorageToSupabase(currentUser.id);
+        showApp();
+        await loadAllData();
+        renderCalendar();
+        drawMileageChart();
+        setupNavigation();
+    }
+}
+
+async function handleAuthSubmit() {
+    if (isSignUpMode) {
+        await handleSignUp();
+    } else {
+        await handleSignIn();
+    }
+}
+
+async function handleSignUp() {
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    const errorEl = document.getElementById('authError');
     
-    setupNavigation();
-    renderCalendar();
-    drawMileageChart();
-    window.addEventListener('resize', drawMileageChart);
-});
+    if (!email || !password) {
+        errorEl.textContent = 'Please enter email and password';
+        return;
+    }
+    
+    if (password.length < 6) {
+        errorEl.textContent = 'Password must be at least 6 characters';
+        return;
+    }
+    
+    const { data, error } = await signUp(email, password);
+    if (error) {
+        errorEl.textContent = error.message;
+    } else {
+        // Account created - try signing in immediately
+        errorEl.style.color = '#27ae60';
+        errorEl.textContent = 'Account created! Signing you in...';
+        setTimeout(async () => {
+            const { data: signInData, error: signInError } = await signIn(email, password);
+            if (signInError) {
+                errorEl.style.color = '#e74c3c';
+                errorEl.textContent = 'Account created but sign in failed: ' + signInError.message;
+            } else {
+                currentUser = signInData.user;
+                await migrateLocalStorageToSupabase(currentUser.id);
+                showApp();
+                await loadAllData();
+                renderCalendar();
+                drawMileageChart();
+                setupNavigation();
+            }
+        }, 1500);
+    }
+}
