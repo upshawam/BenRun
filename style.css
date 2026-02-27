@@ -226,7 +226,7 @@ main {
 .week {
     background: var(--light-bg);
     border-radius: var(--border-radius);
-    padding: 15px;
+    padding: 8px;
     border-left: 5px solid var(--primary-color);
 }
 
@@ -248,15 +248,15 @@ main {
 
 .days-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 3px;
 }
 
 .day {
     background: white;
     border: 2px solid #e0e0e0;
     border-radius: var(--border-radius);
-    padding: 10px;
+    padding: 5px;
     cursor: pointer;
     transition: all 0.2s ease;
     position: relative;
@@ -275,14 +275,14 @@ main {
     flex: 1;
     display: flex;
     flex-direction: column;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .day-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 3px;
 }
 
 .day-date {
@@ -346,6 +346,12 @@ main {
     color: var(--dark-text);
     line-height: 1.4;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
 }
 
 .day.completed .workout-text {
@@ -521,6 +527,17 @@ main {
     color: var(--dark-text);
 }
 
+.form-group.info-group {
+    background: #f0f4ff;
+    padding: 12px;
+    border-radius: 4px;
+    border-left: 3px solid var(--secondary-color);
+}
+
+.form-group.info-group label {
+    margin-bottom: 8px;
+}
+
 .form-group select {
     width: 100%;
     padding: 10px;
@@ -545,6 +562,17 @@ main {
     outline: none;
     border-color: var(--secondary-color);
     box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+#workoutTextInput {
+    width: 100% !important;
+    min-height: 80px;
+    resize: vertical;
+    padding: 10px;
+    font-family: inherit;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
 }
 
 .swap-preview {
@@ -705,16 +733,16 @@ main {
     }
 
     .week {
-        padding: 12px;
+        padding: 8px;
     }
 
     .days-grid {
         grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-        gap: 8px;
+        gap: 3px;
     }
 
     .day {
-        padding: 10px;
+        padding: 5px;
     }
 
     .day-date {
@@ -758,10 +786,11 @@ main {
 
     .days-grid {
         grid-template-columns: repeat(auto-fit, minmax(85px, 1fr));
+        gap: 3px;
     }
 
     .day {
-        padding: 8px;
+        padding: 5px;
     }
 
     .day-date {

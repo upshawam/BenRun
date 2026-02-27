@@ -9,6 +9,7 @@ let swappedWorkouts = {};
 let completedWorkouts = {};
 let actualDistances = {};
 let blankWeekGoals = {}; // Store weekly mileage goals for blank weeks
+let blankWeekWorkouts = {}; // Store custom workout descriptions for blank week days
 let chartEndWeek = null; // For the 12-week mileage chart - initialized on load
 
 // Load all data from localStorage
@@ -38,6 +39,9 @@ function loadAllData() {
     
     const goals = localStorage.getItem('benrunBlankWeekGoals');
     if (goals) blankWeekGoals = JSON.parse(goals);
+    
+    const workouts = localStorage.getItem('benrunBlankWeekWorkouts');
+    if (workouts) blankWeekWorkouts = JSON.parse(workouts);
 }
 
 // Save all data to localStorage
@@ -46,6 +50,7 @@ function saveAllData() {
     localStorage.setItem('benrunCompleted', JSON.stringify(completedWorkouts));
     localStorage.setItem('benrunDistances', JSON.stringify(actualDistances));
     localStorage.setItem('benrunBlankWeekGoals', JSON.stringify(blankWeekGoals));
+    localStorage.setItem('benrunBlankWeekWorkouts', JSON.stringify(blankWeekWorkouts));
 }
 
 // Get current schedule
@@ -376,8 +381,16 @@ function createBlankWeekElement(weekNum) {
         if (dateStr) {
             const distanceKey = `${currentYear}-${dateStr}`;
             const actualDistance = actualDistances[distanceKey];
+            const workoutText = blankWeekWorkouts[distanceKey];
+            
             if (actualDistance !== undefined) {
-                workoutDiv.textContent = `${actualDistance.toFixed(1)} mi ✓`;
+                if (workoutText) {
+                    const displayText = `${actualDistance.toFixed(1)} mi (${workoutText})`;
+                    workoutDiv.textContent = displayText;
+                    workoutDiv.title = displayText; // Show full text on hover
+                } else {
+                    workoutDiv.textContent = `${actualDistance.toFixed(1)} mi`;
+                }
             } else {
                 workoutDiv.textContent = '—';
             }
@@ -527,11 +540,19 @@ function createDayElement(day, weekIndex, dayIndex, month) {
     const actualDistance = actualDistances[distanceKey];
     
     if (actualDistance !== undefined) {
-        // Show both planned and actual
-        workoutDiv.textContent = `${displayWorkout} → ${actualDistance.toFixed(1)} mi ✓`;
+        // Show workout with actual distance logged
+        const prescribedMiles = extractMiles(displayWorkout);
+        if (prescribedMiles > 0) {
+            const displayText = `${displayWorkout} (${prescribedMiles} mi → ${actualDistance.toFixed(1)} mi)`;
+            workoutDiv.textContent = displayText;
+            workoutDiv.title = displayText; // Show full text on hover
+        } else {
+            workoutDiv.textContent = `${actualDistance.toFixed(1)} mi`;
+        }
     } else {
         // Show only planned
         workoutDiv.textContent = displayWorkout;
+        workoutDiv.title = displayWorkout; // Show full text on hover
     }
 
     dayContent.appendChild(workoutDiv);
@@ -683,7 +704,7 @@ function toggleCompletion(weekIndex, dayIndex, dayElement, month) {
 
 // Open distance modal
 function openDistanceModal(weekIndex, dayIndex, workoutText, month) {
-    currentEditingDay = { weekIndex, dayIndex, month };
+    currentEditingDay = { weekIndex, dayIndex, month, isBlankDay: false };
     
     // Use date-based key so distance is tied to the date, not the position
     const schedule = scheduleData[currentYear]?.[month];
@@ -692,6 +713,23 @@ function openDistanceModal(weekIndex, dayIndex, workoutText, month) {
     
     const distanceKey = day ? `${currentYear}-${day.date}` : `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
     const currentDistance = actualDistances[distanceKey];
+    
+    // Show prescribed miles
+    const prescribedMilesInfo = document.getElementById('prescribedMilesInfo');
+    const prescribedMilesDisplay = document.getElementById('prescribedMiles');
+    const swapKey = `${currentYear}-${month}-${weekIndex}-${dayIndex}`;
+    const displayWorkout = swappedWorkouts[swapKey] || workoutText;
+    const prescribedMiles = extractMiles(displayWorkout);
+    
+    if (prescribedMiles > 0) {
+        prescribedMilesInfo.style.display = 'block';
+        prescribedMilesDisplay.textContent = `${prescribedMiles} miles (${displayWorkout})`;
+    } else {
+        prescribedMilesInfo.style.display = 'none';
+    }
+    
+    // Hide workout text editing for scheduled days
+    document.getElementById('workoutTextGroup').style.display = 'none';
     
     const input = document.getElementById('distanceInput');
     input.value = currentDistance || '';
@@ -748,6 +786,14 @@ function openDistanceModalForBlankDay(dateStr) {
     
     const distanceKey = `${currentYear}-${dateStr}`;
     const currentDistance = actualDistances[distanceKey];
+    const currentWorkout = blankWeekWorkouts[distanceKey] || '';
+    
+    // Hide prescribed miles info for blank days
+    document.getElementById('prescribedMilesInfo').style.display = 'none';
+    
+    // Show workout text editing for blank days
+    document.getElementById('workoutTextGroup').style.display = 'block';
+    document.getElementById('workoutTextInput').value = currentWorkout;
     
     const input = document.getElementById('distanceInput');
     input.value = currentDistance || '';
@@ -772,8 +818,32 @@ function saveDistanceForBlankDay() {
     const distanceKey = `${currentYear}-${currentEditingDay.dateStr}`;
     actualDistances[distanceKey] = distance;
     
+    // Save workout text if provided
+    const workoutTextInput = document.getElementById('workoutTextInput');
+    const workoutText = workoutTextInput.value.trim();
+    if (workoutText) {
+        blankWeekWorkouts[distanceKey] = workoutText;
+    } else {
+        delete blankWeekWorkouts[distanceKey];
+    }
+    
     // Auto-mark as completed when distance is entered
     completedWorkouts[distanceKey] = true;
+    
+    // Always recalculate and update the weekly goal based on all logged miles for this week
+    const weekKey = `${currentYear}-${currentWeekNum}`;
+    let weeklyTotal = 0;
+    const weekDates = getDatesForWeek(currentWeekNum);
+    if (weekDates) {
+        weekDates.forEach(dateStr => {
+            const key = `${currentYear}-${dateStr}`;
+            if (actualDistances[key] !== undefined) {
+                weeklyTotal += actualDistances[key];
+            }
+        });
+    }
+    // Set goal to the sum of all logged miles (minimum 1 to show progress bar)
+    blankWeekGoals[weekKey] = Math.max(weeklyTotal, 1);
     
     saveAllData();
     closeDistanceModal();
@@ -866,23 +936,6 @@ function setupNavigation() {
         }
     });
 
-    // Chart navigation handlers
-    document.getElementById('chartPrevBtn').onclick = () => {
-        if (chartEndWeek && chartEndWeek > 12) {
-            chartEndWeek -= 1;
-            drawMileageChart();
-        }
-    };
-
-    document.getElementById('chartNextBtn').onclick = () => {
-        const currentWeek = findCurrentWeek() || currentWeekNum;
-        // Can't go forward past current week (only lookback allowed)
-        if (chartEndWeek < currentWeek) {
-            chartEndWeek += 1;
-            drawMileageChart();
-        }
-    };
-
     // Distance modal controls
     document.querySelector('.close').onclick = closeDistanceModal;
     document.getElementById('cancelDistance').onclick = closeDistanceModal;
@@ -946,13 +999,14 @@ function drawMileageChart() {
     const ctx = canvas.getContext('2d');
     const data = getWeeklyMileageData(chartEndWeek);
     
-    // Update date range display
-    if (data.length >= 2) {
+    // Update date range display (only if element exists)
+    const chartDateRange = document.getElementById('chartDateRange');
+    if (chartDateRange && data.length >= 2) {
         const startWeek = data[0].weekNum;
         const endWeek = data[data.length - 1].weekNum;
         const startDate = getStartDateForWeek(startWeek);
         const endDate = getEndDateForWeek(endWeek);
-        document.getElementById('chartDateRange').textContent = `${startDate} - ${endDate}`;
+        chartDateRange.textContent = `${startDate} - ${endDate}`;
     }
     
     // Set canvas size with DPI scaling for sharp text
