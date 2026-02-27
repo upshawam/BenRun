@@ -1,4 +1,16 @@
 // Supabase Configuration
+// 
+// Required Tables:
+// - completed_workouts: (id, user_id, date_key, completed, created_at, updated_at)
+// - actual_distances: (id, user_id, date_key, distance, created_at, updated_at)
+// - blank_week_goals: (id, user_id, week_key, goal_miles, created_at, updated_at)
+// - blank_week_workouts: (id, user_id, week_key, workout_description, created_at, updated_at)
+// - swapped_workouts: (id, user_id, swap_key, new_workout, created_at, updated_at)
+// - training_schedules: (id, coach_id, year, schedule_json, created_at, updated_at)
+//
+// All tables should have RLS enabled with policies limiting access to the user's own data
+// training_schedules is writable by coach_id owner only
+//
 const SUPABASE_URL = 'https://ugvuuksgrebekoergymq.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVndnV1a3NncmViZWtvZXJneW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxNTEwMDUsImV4cCI6MjA4NzcyNzAwNX0.jRAR9Tv21ibdcShJkQV5_NjipT0W6l9_uweuQrpQ3Nw';
 
@@ -401,5 +413,211 @@ async function migrateLocalStorageToSupabase(userId) {
     } catch (err) {
         console.error('Migration error:', err);
         return { error: err };
+    }
+}
+
+// Save schedule to Supabase (coaches only)
+async function saveScheduleToSupabase(userId, year, scheduleData) {
+    const client = getSupabaseClient();
+    if (!client) return { error: 'Supabase not initialized' };
+    
+    try {
+        const scheduleJson = JSON.stringify(scheduleData);
+        
+        // Try to update first
+        const { data: updateData, error: updateError } = await client
+            .from('training_schedules')
+            .update({ schedule_json: scheduleJson, updated_at: new Date() })
+            .eq('coach_id', userId)
+            .eq('year', year)
+            .maybeSingle();
+        
+        // If no rows were updated, insert
+        if (!updateError && !updateData) {
+            const { error: insertError } = await client
+                .from('training_schedules')
+                .insert({
+                    coach_id: userId,
+                    year: year,
+                    schedule_json: scheduleJson
+                });
+            
+            if (insertError) {
+                console.error('Schedule insert error:', insertError);
+                return { error: insertError };
+            }
+        } else if (updateError) {
+            console.error('Schedule update error:', updateError);
+            return { error: updateError };
+        }
+        
+        return { error: null };
+    } catch (err) {
+        console.error('Error saving schedule:', err);
+        return { error: err };
+    }
+}
+
+// Load schedule from Supabase (for coaches to view uploaded schedules)
+async function loadScheduleFromSupabase(userId, year) {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    
+    try {
+        const { data, error } = await client
+            .from('training_schedules')
+            .select('schedule_json')
+            .eq('coach_id', userId)
+            .eq('year', year)
+            .maybeSingle();
+        
+        if (error) {
+            console.error('Error loading schedule:', error);
+            return null;
+        }
+        
+        if (data && data.schedule_json) {
+            return JSON.parse(data.schedule_json);
+        }
+        
+        return null;
+    } catch (err) {
+        console.error('Error loading schedule:', err);
+        return null;
+    }
+}
+
+// Save user role to Supabase
+async function saveUserRole(userId, role) {
+    const client = getSupabaseClient();
+    if (!client) return { error: 'Supabase not initialized' };
+    
+    try {
+        // Try to update first
+        const { data: updateData, error: updateError } = await client
+            .from('user_profiles')
+            .update({ role: role, updated_at: new Date() })
+            .eq('id', userId)
+            .maybeSingle();
+        
+        // If no rows were updated, insert
+        if (!updateError && !updateData) {
+            const { error: insertError } = await client
+                .from('user_profiles')
+                .insert({
+                    id: userId,
+                    role: role
+                });
+            
+            if (insertError) {
+                console.error('User role insert error:', insertError);
+                return { error: insertError };
+            }
+        } else if (updateError) {
+            console.error('User role update error:', updateError);
+            return { error: updateError };
+        }
+        
+        return { error: null };
+    } catch (err) {
+        console.error('Error saving user role:', err);
+        return { error: err };
+    }
+}
+
+// Load user role from Supabase
+async function loadUserRole(userId) {
+    const client = getSupabaseClient();
+    if (!client) {
+        return 'runner';
+    }
+    
+    try {
+        const { data, error } = await client
+            .from('user_profiles')
+            .select('role')
+            .eq('id', userId)
+            .maybeSingle();
+        
+        if (error) {
+            console.error('Error loading user role:', error.message);
+            return 'runner';
+        }
+        
+        if (data && data.role) {
+            return data.role;
+        }
+        
+        return 'runner';
+    } catch (err) {
+        console.error('Error loading user role:', err);
+        return 'runner';
+    }
+}
+
+// Get all runners (for coach view)
+async function getAllRunners() {
+    const client = getSupabaseClient();
+    if (!client) return [];
+    
+    try {
+        const { data, error } = await client
+            .from('user_profiles')
+            .select('id, email')
+            .eq('role', 'runner');
+        
+        if (error) {
+            console.error('Error loading runners:', error);
+            return [];
+        }
+        
+        return data || [];
+    } catch (err) {
+        console.error('Error loading runners:', err);
+        return [];
+    }
+}
+
+// Ensure user profile exists (create if missing on first login)
+async function ensureUserProfileExists(userId, userEmail) {
+    const client = getSupabaseClient();
+    if (!client) return;
+    
+    try {
+        // Check if profile exists
+        const { data: existingProfile, error: checkError } = await client
+            .from('user_profiles')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+        
+        if (checkError) {
+            console.error('Error checking profile:', checkError);
+            return;
+        }
+        
+        // If profile doesn't exist, try to create it with 'runner' role by default
+        if (!existingProfile) {
+            const { error: insertError } = await client
+                .from('user_profiles')
+                .insert({
+                    id: userId,
+                    email: userEmail,
+                    role: 'runner'
+                });
+            
+            if (insertError) {
+                // If it's an RLS error, just log it - user might not have permission to create their own profile
+                if (insertError.code === '42501') {
+                    console.log('User profile creation blocked by RLS (expected for some users)');
+                } else {
+                    console.error('Error creating profile:', insertError);
+                }
+            } else {
+                console.log('Profile created for user:', userId);
+            }
+        }
+    } catch (err) {
+        console.error('Error ensuring profile exists:', err);
     }
 }

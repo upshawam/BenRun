@@ -187,6 +187,55 @@ header h1 {
     justify-content: center;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* Runner Selector (Coach View) */
+.runner-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 10px 15px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.runner-selector.hidden {
+    display: none !important;
+}
+
+.runner-selector label {
+    color: white;
+    font-weight: 600;
+    font-size: 14px;
+    margin: 0;
+}
+
+.runner-dropdown {
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--dark-text);
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 150px;
+}
+
+.logout-btn {
+    padding: 6px 12px;
+    background: rgba(231, 76, 60, 0.9);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.logout-btn:hover {
+    background: rgba(192, 57, 43, 1);
 }
 
 .month-dropdown {
@@ -818,6 +867,135 @@ main {
 #mileageChart {
     width: 100%;
     height: 250px;
+    display: block;
+}
+
+/* Coach Panel */
+.coach-toggle-btn {
+    padding: 8px 16px;
+    background: #f39c12;
+    color: white;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background 0.3s;
+}
+
+.coach-toggle-btn:hover {
+    background: #e67e22;
+}
+
+.coach-panel {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    margin: 20px 0;
+    padding: 20px;
+    border-left: 4px solid #f39c12;
+    position: relative;
+    z-index: 100;
+}
+
+.coach-panel.hidden {
+    display: none !important;
+    pointer-events: none;
+}
+
+.coach-panel-content h2 {
+    color: var(--dark-text);
+    margin-bottom: 10px;
+    font-size: 20px;
+}
+
+.coach-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.coach-panel-header h2 {
+    margin: 0;
+}
+
+.close-panel-btn {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #e74c3c;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-panel-btn:hover {
+    color: #c0392b;
+}
+
+.coach-help-text {
+    color: #7f8c8d;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
+
+.schedule-json-input {
+    width: 100%;
+    min-height: 300px;
+    padding: 10px;
+    border: 1px solid #bdc3c7;
+    border-radius: var(--border-radius);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+
+.schedule-format-help {
+    background: #ecf0f1;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    margin-top: 15px;
+    cursor: pointer;
+}
+
+.schedule-format-help summary {
+    font-weight: 600;
+    color: var(--secondary-color);
+    user-select: none;
+}
+
+.schedule-format-help pre {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 11px;
+    margin-top: 10px;
+}
+
+.upload-status {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    display: none;
+}
+
+.upload-status.success {
+    background: #d5f4e6;
+    color: #27ae60;
+    display: block;
+}
+
+.upload-status.error {
+    background: #fadbd8;
+    color: #e74c3c;
     display: block;
 }
 

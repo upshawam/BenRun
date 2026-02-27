@@ -55,8 +55,41 @@
                     <option value="12">December</option>
                 </select>
                 <button id="nextMonth" class="nav-btn">Next Week →</button>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+            <div id="runnerSelector" class="runner-selector hidden">
+                <label for="runnerDropdown">View Runner:</label>
+                <select id="runnerDropdown" class="runner-dropdown">
+                    <option value="">Select a runner...</option>
+                </select>
             </div>
         </header>
+
+        <!-- Coach Panel Section (hidden by default) -->
+        <div id="coachPanel" class="coach-panel hidden">
+            <div class="coach-panel-content">
+                <div class="coach-panel-header">
+                    <h2>Upload Schedule for <span id="selectedRunnerName">Runner</span></h2>
+                    <button id="closeCoachPanelBtn" class="close-panel-btn">&times;</button>
+                </div>
+                <p class="coach-help-text">Paste your JSON schedule below. The schedule should follow the structure of the example provided.</p>
+                <div class="form-group">
+                    <label for="scheduleJsonInput">Schedule JSON:</label>
+                    <textarea id="scheduleJsonInput" class="schedule-json-input" placeholder="Paste your JSON schedule here..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="uploadYear">Year:</label>
+                    <input type="number" id="uploadYear" value="2026" min="2000" max="2100">
+                </div>
+                <button id="uploadScheduleBtn" class="btn-primary">Upload Schedule</button>
+                <button id="closeCoachPanelBtn2" class="btn-secondary">Close</button>
+                <p id="uploadStatus" class="upload-status"></p>
+                <details class="schedule-format-help">
+                    <summary>Show JSON Format Example</summary>
+                    <pre id="scheduleFormatExample"></pre>
+                </details>
+            </div>
+        </div>
 
         <main>
             <div class="progress-section">

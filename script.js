@@ -1,6 +1,8 @@
 // Initialize auth and app
 let currentUser = null;
 let isSignUpMode = false;
+let currentUserRole = 'runner'; // 'runner' or 'coach'
+let viewingRunnerId = null; // For coaches viewing a specific runner
 
 // Initialize auth and app
 async function initializeApp() {
@@ -9,6 +11,46 @@ async function initializeApp() {
     
     if (session) {
         currentUser = session.user;
+        
+        // Ensure user profile exists (create if missing)
+        await ensureUserProfileExists(currentUser.id, currentUser.email);
+        
+        // Load user role from Supabase
+        currentUserRole = await loadUserRole(currentUser.id);
+        
+        // Show/hide runner selector based on role
+        const runnerSelector = document.getElementById('runnerSelector');
+        const coachPanel = document.getElementById('coachPanel');
+        if (currentUserRole === 'coach') {
+            runnerSelector.classList.remove('hidden');
+            
+            // Load all runners for dropdown
+            try {
+                const runners = await getAllRunners();
+                populateRunnerDropdown(runners);
+                
+                // Set up runner selection handler
+                document.getElementById('runnerDropdown').addEventListener('change', async (e) => {
+                    viewingRunnerId = e.target.value;
+                    if (viewingRunnerId) {
+                        document.getElementById('selectedRunnerName').textContent = e.target.options[e.target.selectedIndex].text;
+                        // Load that runner's data
+                        await loadRunnerData(viewingRunnerId);
+                        renderCalendar();
+                        drawMileageChart();
+                    } else {
+                        coachPanel.classList.add('hidden');
+                        document.getElementById('weekContainer').innerHTML = '<p>Select a runner to view their schedule</p>';
+                    }
+                });
+            } catch (err) {
+                console.error('Error loading runners:', err);
+            }
+        } else {
+            runnerSelector.classList.add('hidden');
+            coachPanel.classList.add('hidden');
+            viewingRunnerId = null;
+        }
         
         // Migrate any localStorage data to Supabase on first login
         await migrateLocalStorageToSupabase(currentUser.id);
@@ -37,6 +79,18 @@ async function initializeApp() {
 function showAuth() {
     document.getElementById('authContainer').classList.remove('hidden');
     document.getElementById('appContainer').classList.add('hidden');
+}
+
+async function handleLogout() {
+    const error = await signOut();
+    if (error) {
+        console.error('Logout error:', error);
+    } else {
+        currentUser = null;
+        currentUserRole = 'runner';
+        viewingRunnerId = null;
+        showAuth();
+    }
 }
 
 function showApp() {
@@ -1324,13 +1378,153 @@ function drawMileageChart() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Ensure all modals start hidden
+    document.getElementById('distanceModal').classList.add('hidden');
+    document.getElementById('coachPanel').classList.add('hidden');
+    
     // Set up auth handlers
     document.getElementById('authSubmitBtn').addEventListener('click', handleAuthSubmit);
     document.getElementById('toggleAuthMode').addEventListener('click', () => switchAuthMode(!isSignUpMode));
     
+    // Set up coach panel handlers (both close buttons)
+    const closeButtons = document.querySelectorAll('[id^="closeCoachPanelBtn"]');
+    closeButtons.forEach(btn => {
+        btn.addEventListener('click', toggleCoachPanel);
+    });
+    document.getElementById('uploadScheduleBtn').addEventListener('click', uploadSchedule);
+    document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+    
+    // Show JSON format example
+    const formatExample = {
+        2026: {
+            3: {
+                month: 'March',
+                phase: 'Durability Phase',
+                description: 'All runs at easy pace',
+                hills: 'Hill strides when noted',
+                weeks: [
+                    {
+                        weekNum: 10,
+                        startDate: '3/2',
+                        endDate: '3/8',
+                        total: '22 miles',
+                        days: [
+                            { date: '3/2', day: 'Mon', workout: '4 mi', offDay: false },
+                            { date: '3/3', day: 'Tue', workout: '5 mi', offDay: false },
+                            { date: '3/4', day: 'Wed', workout: 'OFF', offDay: true },
+                            { date: '3/5', day: 'Thu', workout: '6 mi', offDay: false },
+                            { date: '3/6', day: 'Fri', workout: 'OFF', offDay: true },
+                            { date: '3/7', day: 'Sat', workout: '7 mi', offDay: false },
+                            { date: '3/8', day: 'Sun', workout: 'OFF', offDay: true }
+                        ]
+                    }
+                ]
+            }
+        }
+    };
+    document.getElementById('scheduleFormatExample').textContent = JSON.stringify(formatExample, null, 2);
+    
     // Initialize the app
     initializeApp();
 });
+
+// Coach Panel and Runner Selector Functions
+function toggleCoachPanel() {
+    const coachPanel = document.getElementById('coachPanel');
+    coachPanel.classList.toggle('hidden');
+}
+
+async function populateRunnerDropdown(runners) {
+    const dropdown = document.getElementById('runnerDropdown');
+    
+    // Clear existing options except the first one
+    while (dropdown.options.length > 1) {
+        dropdown.remove(1);
+    }
+    
+    // Add runners to dropdown
+    runners.forEach(runner => {
+        const option = document.createElement('option');
+        option.value = runner.id;
+        option.textContent = runner.email;
+        dropdown.appendChild(option);
+    });
+}
+
+async function loadRunnerData(runnerId) {
+    // Load the selected runner's data into memory for viewing
+    const completedData = await loadCompletedWorkouts(runnerId);
+    actualDistances = await loadActualDistances(runnerId);
+    blankWeekGoals = await loadBlankWeekGoals(runnerId);
+    blankWeekWorkouts = await loadBlankWeekWorkouts(runnerId);
+    swappedWorkouts = await loadSwappedWorkouts(runnerId);
+    
+    // Filter out false values - only keep true entries
+    completedWorkouts = {};
+    for (const [key, value] of Object.entries(completedData)) {
+        if (value === true) {
+            completedWorkouts[key] = true;
+        }
+    }
+}
+
+async function uploadSchedule() {
+    const jsonInput = document.getElementById('scheduleJsonInput').value;
+    const uploadYear = parseInt(document.getElementById('uploadYear').value);
+    const uploadStatus = document.getElementById('uploadStatus');
+    
+    if (!viewingRunnerId) {
+        uploadStatus.textContent = 'Please select a runner first';
+        uploadStatus.className = 'upload-status error';
+        return;
+    }
+    
+    if (!jsonInput.trim()) {
+        uploadStatus.textContent = 'Please paste a JSON schedule';
+        uploadStatus.className = 'upload-status error';
+        return;
+    }
+    
+    try {
+        // Parse the JSON
+        const scheduleJson = JSON.parse(jsonInput);
+        
+        // Validate the structure
+        if (!scheduleJson[uploadYear]) {
+            uploadStatus.textContent = 'Error: JSON must contain data for year ' + uploadYear;
+            uploadStatus.className = 'upload-status error';
+            return;
+        }
+        
+        // Update the global scheduleData
+        if (!scheduleData[uploadYear]) {
+            scheduleData[uploadYear] = {};
+        }
+        Object.assign(scheduleData[uploadYear], scheduleJson[uploadYear]);
+        
+        // Save to Supabase with runner ID
+        await saveScheduleToSupabase(viewingRunnerId, uploadYear, scheduleData[uploadYear]);
+
+        
+        // Clear input and show success
+        document.getElementById('scheduleJsonInput').value = '';
+        uploadStatus.textContent = 'Schedule uploaded successfully!';
+        uploadStatus.className = 'upload-status success';
+        
+        // Re-render the calendar with new schedule
+        renderCalendar();
+        drawMileageChart();
+        
+        // Hide the panel after 2 seconds
+        setTimeout(() => {
+            toggleCoachPanel();
+        }, 2000);
+        
+    } catch (error) {
+        uploadStatus.textContent = 'Error: Invalid JSON - ' + error.message;
+        uploadStatus.className = 'upload-status error';
+    }
+}
 
 async function handleSignIn() {
     const email = document.getElementById('authEmail').value;
@@ -1346,13 +1540,8 @@ async function handleSignIn() {
     if (error) {
         errorEl.textContent = error.message;
     } else {
-        currentUser = data.user;
-        await migrateLocalStorageToSupabase(currentUser.id);
-        showApp();
-        await loadAllData();
-        renderCalendar();
-        drawMileageChart();
-        setupNavigation();
+        // Call initializeApp to properly load role and set up UI
+        await initializeApp();
     }
 }
 
@@ -1383,6 +1572,13 @@ async function handleSignUp() {
     if (error) {
         errorEl.textContent = error.message;
     } else {
+        // Check if this is your coach email and make them a coach
+        // Replace 'coach@example.com' with your actual email
+        const isCoach = email.toLowerCase() === 'aaronup87@yahoo.com'; // Change this to your email
+        const role = isCoach ? 'coach' : 'runner';
+        
+        await saveUserRole(data.user.id, role);
+        
         // Account created - try signing in immediately
         errorEl.style.color = '#27ae60';
         errorEl.textContent = 'Account created! Signing you in...';
@@ -1392,13 +1588,8 @@ async function handleSignUp() {
                 errorEl.style.color = '#e74c3c';
                 errorEl.textContent = 'Account created but sign in failed: ' + signInError.message;
             } else {
-                currentUser = signInData.user;
-                await migrateLocalStorageToSupabase(currentUser.id);
-                showApp();
-                await loadAllData();
-                renderCalendar();
-                drawMileageChart();
-                setupNavigation();
+                // Call initializeApp to properly load role and set up UI
+                await initializeApp();
             }
         }, 1500);
     }
