@@ -155,7 +155,7 @@ async function loadBlankWeekWorkouts(userId) {
     
     const result = {};
     (data || []).forEach(row => {
-        result[row.week_key] = row.workout_description;
+        result[row.date_key] = row.workout_description;
     });
     return result;
 }
@@ -276,7 +276,7 @@ async function saveBlankWeekGoal(userId, weekKey, goalMiles) {
 }
 
 // Save blank week workout
-async function saveBlankWeekWorkout(userId, weekKey, workoutDescription) {
+async function saveBlankWeekWorkout(userId, dateKey, workoutDescription) {
     const client = getSupabaseClient();
     if (!client) return { error: 'Supabase not initialized' };
     
@@ -285,21 +285,21 @@ async function saveBlankWeekWorkout(userId, weekKey, workoutDescription) {
         .from('blank_week_workouts')
         .update({ workout_description: workoutDescription })
         .eq('user_id', userId)
-        .eq('week_key', weekKey);
+        .eq('date_key', dateKey);
     
     // Then check if record exists (suppress 406 error if no rows)
     const { data: existingRow, error: checkError } = await client
         .from('blank_week_workouts')
         .select('id')
         .eq('user_id', userId)
-        .eq('week_key', weekKey)
+        .eq('date_key', dateKey)
         .maybeSingle();
     
     // If it still doesn't exist, insert it
     if (!existingRow && !checkError) {
         const { error } = await client
             .from('blank_week_workouts')
-            .insert({ user_id: userId, week_key: weekKey, workout_description: workoutDescription });
+            .insert({ user_id: userId, date_key: dateKey, workout_description: workoutDescription });
         return { error };
     }
     
@@ -335,6 +335,34 @@ async function saveSwappedWorkout(userId, swapKey, newWorkout) {
     }
     
     return { error: null };
+}
+
+// Delete actual distance (clear day data)
+async function deleteActualDistance(userId, dateKey) {
+    const client = getSupabaseClient();
+    if (!client) return { error: 'Supabase not initialized' };
+    
+    const { error } = await client
+        .from('actual_distances')
+        .delete()
+        .eq('user_id', userId)
+        .eq('date_key', dateKey);
+    
+    return { error };
+}
+
+// Delete completed workout (clear day data)
+async function deleteCompletedWorkout(userId, dateKey) {
+    const client = getSupabaseClient();
+    if (!client) return { error: 'Supabase not initialized' };
+    
+    const { error } = await client
+        .from('completed_workouts')
+        .delete()
+        .eq('user_id', userId)
+        .eq('date_key', dateKey);
+    
+    return { error };
 }
 
 // Migrate localStorage data to Supabase (one-time on first login)
@@ -564,7 +592,7 @@ async function getAllRunners() {
         const { data, error } = await client
             .from('user_profiles')
             .select('id, email')
-            .eq('role', 'runner');
+            .neq('email', 'aaronup87@yahoo.com');
         
         if (error) {
             console.error('Error loading runners:', error);

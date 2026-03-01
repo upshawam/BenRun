@@ -1,8 +1,9 @@
 // Initialize auth and app
 let currentUser = null;
 let isSignUpMode = false;
-let currentUserRole = 'runner'; // 'runner' or 'coach'
-let viewingRunnerId = null; // For coaches viewing a specific runner
+const COACH_EMAIL = 'aaronup87@yahoo.com';
+let isCoach = false;
+let viewingRunnerId = null; // For coach viewing specific runner
 
 // Initialize auth and app
 async function initializeApp() {
@@ -12,64 +13,80 @@ async function initializeApp() {
     if (session) {
         currentUser = session.user;
         
-        // Ensure user profile exists (create if missing)
-        await ensureUserProfileExists(currentUser.id, currentUser.email);
+        // Check if user is coach based on email
+        isCoach = currentUser.email.toLowerCase() === COACH_EMAIL;
         
-        // Load user role from Supabase
-        currentUserRole = await loadUserRole(currentUser.id);
-        
-        // Show/hide runner selector based on role
+        // Show runner selector dropdown for coach only
         const runnerSelector = document.getElementById('runnerSelector');
         const coachPanel = document.getElementById('coachPanel');
-        if (currentUserRole === 'coach') {
-            runnerSelector.classList.remove('hidden');
+        if (isCoach) {
+            if (runnerSelector) runnerSelector.classList.remove('hidden');
+            const openCoachPanelBtn = document.getElementById('openCoachPanelBtn');
+            if (openCoachPanelBtn) openCoachPanelBtn.classList.remove('hidden');
             
-            // Load all runners for dropdown
+            // Load all runners for dropdown (including coach's own schedule as "My Schedule")
             try {
                 const runners = await getAllRunners();
-                populateRunnerDropdown(runners);
+                populateRunnerDropdown(runners, true); // true = include coach's own schedule
                 
                 // Set up runner selection handler
                 document.getElementById('runnerDropdown').addEventListener('change', async (e) => {
                     viewingRunnerId = e.target.value;
                     if (viewingRunnerId) {
                         document.getElementById('selectedRunnerName').textContent = e.target.options[e.target.selectedIndex].text;
+                        // Reset week navigation
+                        const currentWeek = findCurrentWeek();
+                        if (currentWeek) {
+                            currentWeekNum = currentWeek;
+                        }
+                        chartEndWeek = currentWeekNum;
                         // Load that runner's data
-                        await loadRunnerData(viewingRunnerId);
+                        await loadAllData();
+                        setupNavigation();
                         renderCalendar();
                         drawMileageChart();
-                    } else {
-                        coachPanel.classList.add('hidden');
-                        document.getElementById('weekContainer').innerHTML = '<p>Select a runner to view their schedule</p>';
                     }
                 });
+                
+                // Pre-select coach's own schedule
+                document.getElementById('runnerDropdown').value = currentUser.id;
+                document.getElementById('runnerDropdown').dispatchEvent(new Event('change'));
             } catch (err) {
                 console.error('Error loading runners:', err);
             }
         } else {
-            runnerSelector.classList.add('hidden');
-            coachPanel.classList.add('hidden');
-            viewingRunnerId = null;
+            // Hide coach features for runners
+            if (runnerSelector) runnerSelector.classList.add('hidden');
+            const openCoachPanelBtn = document.getElementById('openCoachPanelBtn');
+            if (openCoachPanelBtn) openCoachPanelBtn.classList.add('hidden');
         }
+
+        // Start with coach panel hidden; coach can open it with the upload button
+        if (coachPanel) coachPanel.classList.add('hidden');
         
         // Migrate any localStorage data to Supabase on first login
         await migrateLocalStorageToSupabase(currentUser.id);
         
         showApp();
-        await loadAllData();
         
-        // Navigate to current week on page load
-        const currentWeek = findCurrentWeek();
-        if (currentWeek) {
-            currentWeekNum = currentWeek;
+        // Load data for current user or selected runner (handled by dropdown for coach)
+        if (!isCoach) {
+            console.log('✅ Loading runner data');
+            await loadAllData();
+            
+            // Navigate to current week on page load
+            const currentWeek = findCurrentWeek();
+            if (currentWeek) {
+                currentWeekNum = currentWeek;
+            }
+            
+            // Initialize chart to show last 12 weeks from current week
+            chartEndWeek = currentWeekNum;
+            
+            setupNavigation();
+            renderCalendar();
+            drawMileageChart();
         }
-        
-        // Initialize chart to show last 12 weeks from current week
-        chartEndWeek = currentWeekNum;
-        
-        setupNavigation();
-        renderCalendar();
-        drawMileageChart();
         window.addEventListener('resize', drawMileageChart);
     } else {
         showAuth();
@@ -87,7 +104,7 @@ async function handleLogout() {
         console.error('Logout error:', error);
     } else {
         currentUser = null;
-        currentUserRole = 'runner';
+        isCoach = false;
         viewingRunnerId = null;
         showAuth();
     }
@@ -138,12 +155,18 @@ let chartEndWeek = null; // For the 12-week mileage chart - initialized on load
 async function loadAllData() {
     if (!currentUser) return;
     
-    // Load from Supabase
-    const completedData = await loadCompletedWorkouts(currentUser.id);
-    actualDistances = await loadActualDistances(currentUser.id);
-    blankWeekGoals = await loadBlankWeekGoals(currentUser.id);
-    blankWeekWorkouts = await loadBlankWeekWorkouts(currentUser.id);
-    swappedWorkouts = await loadSwappedWorkouts(currentUser.id);
+    // Coaches must select a runner - don't load coach's own data
+    if (isCoach && !viewingRunnerId) return;
+    
+    // Determine whose data to load - if coach viewing a runner, load runner's data
+    const userIdToLoad = viewingRunnerId || currentUser.id;
+    
+    // Load current user's (or selected runner's) data
+    const completedData = await loadCompletedWorkouts(userIdToLoad);
+    actualDistances = await loadActualDistances(userIdToLoad);
+    blankWeekGoals = await loadBlankWeekGoals(userIdToLoad);
+    blankWeekWorkouts = await loadBlankWeekWorkouts(userIdToLoad);
+    swappedWorkouts = await loadSwappedWorkouts(userIdToLoad);
     
     // Filter out false values - only keep true entries
     completedWorkouts = {};
@@ -158,31 +181,32 @@ async function loadAllData() {
 async function saveAllData() {
     if (!currentUser) return;
     
-    const userId = currentUser.id;
+    // Determine whose data to save - if coach viewing a runner, save to runner's account
+    const userIdToSave = viewingRunnerId || currentUser.id;
     
     // Save swapped workouts
     for (const [weekKey, swapData] of Object.entries(swappedWorkouts)) {
-        await saveSwappedWorkout(userId, weekKey, swapData);
+        await saveSwappedWorkout(userIdToSave, weekKey, swapData);
     }
     
     // Save completed workouts
     for (const [dateKey, workout] of Object.entries(completedWorkouts)) {
-        await saveCompletedWorkout(userId, dateKey, workout);
+        await saveCompletedWorkout(userIdToSave, dateKey, workout);
     }
     
     // Save actual distances
     for (const [dateKey, distance] of Object.entries(actualDistances)) {
-        await saveActualDistance(userId, dateKey, distance);
+        await saveActualDistance(userIdToSave, dateKey, distance);
     }
     
     // Save blank week goals
     for (const [weekKey, goal] of Object.entries(blankWeekGoals)) {
-        await saveBlankWeekGoal(userId, weekKey, goal);
+        await saveBlankWeekGoal(userIdToSave, weekKey, goal);
     }
     
     // Save blank week workouts
     for (const [weekKey, workout] of Object.entries(blankWeekWorkouts)) {
-        await saveBlankWeekWorkout(userId, weekKey, workout);
+        await saveBlankWeekWorkout(userIdToSave, weekKey, workout);
     }
 }
 
@@ -237,20 +261,20 @@ function getMonthForWeek(weekNum) {
 
 // Get the start date for a given week number
 function getStartDateForWeek(weekNum, year = 2026) {
-    // Map week numbers to approximate start dates
+    // Map week numbers to Monday start dates for 2026 (starts on Thursday, so first Monday is 1/5)
     const weekStarts = {
-        1: '1/1', 2: '1/6', 3: '1/13', 4: '1/20',
-        5: '1/27', 6: '2/2', 7: '2/9', 8: '2/16', 9: '2/23',
-        10: '3/2', 11: '3/9', 12: '3/16', 13: '3/23', 14: '3/30',
-        15: '4/6', 16: '4/13', 17: '4/20', 18: '4/27',
-        19: '5/4', 20: '5/11', 21: '5/18', 22: '5/25',
-        23: '6/1', 24: '6/8', 25: '6/15', 26: '6/22', 27: '6/29',
-        28: '7/6', 29: '7/13', 30: '7/20', 31: '7/27',
-        32: '8/3', 33: '8/10', 34: '8/17', 35: '8/24', 36: '8/31',
-        37: '9/7', 38: '9/14', 39: '9/21', 40: '9/28',
-        41: '10/5', 42: '10/12', 43: '10/19', 44: '10/26',
-        45: '11/2', 46: '11/9', 47: '11/16', 48: '11/23',
-        49: '11/30', 50: '12/7', 51: '12/14', 52: '12/21'
+        1: '1/5', 2: '1/12', 3: '1/19', 4: '1/26',
+        5: '2/2', 6: '2/9', 7: '2/16', 8: '2/23',
+        9: '3/2', 10: '3/9', 11: '3/16', 12: '3/23', 13: '3/30',
+        14: '4/6', 15: '4/13', 16: '4/20', 17: '4/27',
+        18: '5/4', 19: '5/11', 20: '5/18', 21: '5/25',
+        22: '6/1', 23: '6/8', 24: '6/15', 25: '6/22', 26: '6/29',
+        27: '7/6', 28: '7/13', 29: '7/20', 30: '7/27',
+        31: '8/3', 32: '8/10', 33: '8/17', 34: '8/24', 35: '8/31',
+        36: '9/7', 37: '9/14', 38: '9/21', 39: '9/28',
+        40: '10/5', 41: '10/12', 42: '10/19', 43: '10/26',
+        44: '11/2', 45: '11/9', 46: '11/16', 47: '11/23',
+        48: '11/30', 49: '12/7', 50: '12/14', 51: '12/21', 52: '12/28'
     };
     return weekStarts[weekNum] || null;
 }
@@ -311,24 +335,26 @@ function getFirstWeekOfMonth(month) {
 
 // Find the week number for today's date
 function findCurrentWeek() {
-    const month = todayDate.getMonth() + 1; // JavaScript months are 0-11
-    const day = todayDate.getDate();
+    const today = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
     
-    for (let m = 1; m <= 12; m++) {
-        const schedule = scheduleData[currentYear]?.[m];
-        if (!schedule) continue;
+    // Check each week to see if today falls within its range
+    for (let weekNum = 1; weekNum <= 52; weekNum++) {
+        const dates = getDatesForWeek(weekNum, currentYear);
+        if (!dates) continue;
         
-        for (const week of schedule.weeks) {
-            for (const dayObj of week.days) {
-                const [dayMonth, dayNum] = dayObj.date.split('/').map(Number);
-                if (dayMonth === month && dayNum === day) {
-                    return week.weekNum;
-                }
+        // Check if today matches any date in this week
+        const todayMonth = today.getMonth() + 1;
+        const todayDay = today.getDate();
+        
+        for (const dateStr of dates) {
+            const [month, day] = dateStr.split('/').map(Number);
+            if (month === todayMonth && day === todayDay) {
+                return weekNum;
             }
         }
     }
     
-    return null; // Today's date not in schedule
+    return null; // Today's date not found (shouldn't happen in 2026)
 }
 
 // Get today's info (month, day index, week index)
@@ -359,6 +385,14 @@ function getTodayInfo() {
 function extractMiles(workoutStr) {
     const match = workoutStr.match(/(\d+(?:\.\d+)?)\s*mi/);
     return match ? parseFloat(match[1]) : 0;
+}
+
+function formatLoggedMiles(distance) {
+    const numericDistance = Number(distance);
+    if (!Number.isFinite(numericDistance)) {
+        return String(distance);
+    }
+    return numericDistance.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
 }
 
 // Calculate weekly stats
@@ -518,11 +552,11 @@ function createBlankWeekElement(weekNum) {
             
             if (actualDistance !== undefined) {
                 if (workoutText) {
-                    const displayText = `${actualDistance.toFixed(1)} mi (${workoutText})`;
+                    const displayText = `${formatLoggedMiles(actualDistance)} mi (${workoutText})`;
                     workoutDiv.textContent = displayText;
                     workoutDiv.title = displayText; // Show full text on hover
                 } else {
-                    workoutDiv.textContent = `${actualDistance.toFixed(1)} mi`;
+                    workoutDiv.textContent = `${formatLoggedMiles(actualDistance)} mi`;
                 }
             } else {
                 workoutDiv.textContent = '—';
@@ -676,11 +710,11 @@ function createDayElement(day, weekIndex, dayIndex, month) {
         // Show workout with actual distance logged
         const prescribedMiles = extractMiles(displayWorkout);
         if (prescribedMiles > 0) {
-            const displayText = `${displayWorkout} (${prescribedMiles} mi → ${actualDistance.toFixed(1)} mi)`;
+            const displayText = `${displayWorkout} (${prescribedMiles} mi → ${formatLoggedMiles(actualDistance)} mi)`;
             workoutDiv.textContent = displayText;
             workoutDiv.title = displayText; // Show full text on hover
         } else {
-            workoutDiv.textContent = `${actualDistance.toFixed(1)} mi`;
+            workoutDiv.textContent = `${formatLoggedMiles(actualDistance)} mi`;
         }
     } else {
         // Show only planned
@@ -876,6 +910,42 @@ function openDistanceModal(weekIndex, dayIndex, workoutText, month) {
 function closeDistanceModal() {
     document.getElementById('distanceModal').classList.add('hidden');
     currentEditingDay = null;
+}
+
+// Clear day data (remove all distance/completion data for that date)
+async function clearDayData() {
+    if (!currentEditingDay) return;
+    
+    if (!confirm('Are you sure you want to clear this day\'s data? This cannot be undone.')) {
+        return;
+    }
+    
+    // Handle blank day separately
+    if (currentEditingDay.isBlankDay) {
+        const distanceKey = `${currentYear}-${currentEditingDay.dateStr}`;
+        delete actualDistances[distanceKey];
+        delete completedWorkouts[distanceKey];
+        delete blankWeekWorkouts[distanceKey];
+    } else {
+        // Regular scheduled day
+        const schedule = scheduleData[currentYear]?.[currentEditingDay.month];
+        const week = schedule?.weeks[currentEditingDay.weekIndex];
+        const day = week?.days[currentEditingDay.dayIndex];
+        
+        const distanceKey = day ? `${currentYear}-${day.date}` : `${currentYear}-${currentEditingDay.month}-${currentEditingDay.weekIndex}-${currentEditingDay.dayIndex}`;
+        delete actualDistances[distanceKey];
+        delete completedWorkouts[distanceKey];
+        
+        // Delete from Supabase
+        await deleteActualDistance(viewingRunnerId || currentUser.id, distanceKey);
+        await deleteCompletedWorkout(viewingRunnerId || currentUser.id, distanceKey);
+    }
+    
+    // Save changes
+    await saveAllData();
+    closeDistanceModal();
+    renderCalendar();
+    drawMileageChart();
 }
 
 // Save distance
@@ -1108,11 +1178,23 @@ function getWeeklyMileageData(endWeek = null) {
                     // Only count miles if the workout is completed (checked off)
                     if (completedWorkouts[distanceKey]) {
                         const actualDistance = actualDistances[distanceKey];
-                        if (actualDistance) {
+                        if (actualDistance !== undefined) {
                             weeklyMiles += actualDistance;
                         } else if (!day.offDay) {
                             weeklyMiles += extractMiles(day.workout);
                         }
+                    }
+                });
+            }
+        } else {
+            // Blank week: count completed logged distances from date-based keys
+            const weekDates = getDatesForWeek(week);
+            if (weekDates) {
+                weekDates.forEach(dateStr => {
+                    const distanceKey = `${currentYear}-${dateStr}`;
+                    const actualDistance = actualDistances[distanceKey];
+                    if (completedWorkouts[distanceKey] && actualDistance !== undefined) {
+                        weeklyMiles += actualDistance;
                     }
                 });
             }
@@ -1391,6 +1473,10 @@ document.addEventListener('DOMContentLoaded', () => {
     closeButtons.forEach(btn => {
         btn.addEventListener('click', toggleCoachPanel);
     });
+    const openCoachPanelBtn = document.getElementById('openCoachPanelBtn');
+    if (openCoachPanelBtn) {
+        openCoachPanelBtn.addEventListener('click', toggleCoachPanel);
+    }
     document.getElementById('uploadScheduleBtn').addEventListener('click', uploadSchedule);
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
     
@@ -1434,12 +1520,20 @@ function toggleCoachPanel() {
     coachPanel.classList.toggle('hidden');
 }
 
-async function populateRunnerDropdown(runners) {
+async function populateRunnerDropdown(runners, includeCoach = false) {
     const dropdown = document.getElementById('runnerDropdown');
     
     // Clear existing options except the first one
     while (dropdown.options.length > 1) {
         dropdown.remove(1);
+    }
+    
+    // Add coach's own schedule as first option if requested
+    if (includeCoach && currentUser) {
+        const option = document.createElement('option');
+        option.value = currentUser.id;
+        option.textContent = 'My Schedule';
+        dropdown.appendChild(option);
     }
     
     // Add runners to dropdown
@@ -1449,23 +1543,6 @@ async function populateRunnerDropdown(runners) {
         option.textContent = runner.email;
         dropdown.appendChild(option);
     });
-}
-
-async function loadRunnerData(runnerId) {
-    // Load the selected runner's data into memory for viewing
-    const completedData = await loadCompletedWorkouts(runnerId);
-    actualDistances = await loadActualDistances(runnerId);
-    blankWeekGoals = await loadBlankWeekGoals(runnerId);
-    blankWeekWorkouts = await loadBlankWeekWorkouts(runnerId);
-    swappedWorkouts = await loadSwappedWorkouts(runnerId);
-    
-    // Filter out false values - only keep true entries
-    completedWorkouts = {};
-    for (const [key, value] of Object.entries(completedData)) {
-        if (value === true) {
-            completedWorkouts[key] = true;
-        }
-    }
 }
 
 async function uploadSchedule() {
@@ -1572,13 +1649,6 @@ async function handleSignUp() {
     if (error) {
         errorEl.textContent = error.message;
     } else {
-        // Check if this is your coach email and make them a coach
-        // Replace 'coach@example.com' with your actual email
-        const isCoach = email.toLowerCase() === 'aaronup87@yahoo.com'; // Change this to your email
-        const role = isCoach ? 'coach' : 'runner';
-        
-        await saveUserRole(data.user.id, role);
-        
         // Account created - try signing in immediately
         errorEl.style.color = '#27ae60';
         errorEl.textContent = 'Account created! Signing you in...';
@@ -1588,7 +1658,7 @@ async function handleSignUp() {
                 errorEl.style.color = '#e74c3c';
                 errorEl.textContent = 'Account created but sign in failed: ' + signInError.message;
             } else {
-                // Call initializeApp to properly load role and set up UI
+                // Call initializeApp to set up the app
                 await initializeApp();
             }
         }, 1500);
