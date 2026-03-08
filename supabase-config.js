@@ -365,6 +365,20 @@ async function deleteCompletedWorkout(userId, dateKey) {
     return { error };
 }
 
+// Delete blank week workout description for a date
+async function deleteBlankWeekWorkout(userId, dateKey) {
+    const client = getSupabaseClient();
+    if (!client) return { error: 'Supabase not initialized' };
+
+    const { error } = await client
+        .from('blank_week_workouts')
+        .delete()
+        .eq('user_id', userId)
+        .eq('date_key', dateKey);
+
+    return { error };
+}
+
 // Migrate localStorage data to Supabase (one-time on first login)
 async function migrateLocalStorageToSupabase(userId) {
     const client = getSupabaseClient();

@@ -920,12 +920,18 @@ async function clearDayData() {
         return;
     }
     
+    const userIdToSave = viewingRunnerId || currentUser.id;
+
     // Handle blank day separately
     if (currentEditingDay.isBlankDay) {
         const distanceKey = `${currentYear}-${currentEditingDay.dateStr}`;
         delete actualDistances[distanceKey];
         delete completedWorkouts[distanceKey];
         delete blankWeekWorkouts[distanceKey];
+
+        await deleteActualDistance(userIdToSave, distanceKey);
+        await deleteCompletedWorkout(userIdToSave, distanceKey);
+        await deleteBlankWeekWorkout(userIdToSave, distanceKey);
     } else {
         // Regular scheduled day
         const schedule = scheduleData[currentYear]?.[currentEditingDay.month];
@@ -937,8 +943,8 @@ async function clearDayData() {
         delete completedWorkouts[distanceKey];
         
         // Delete from Supabase
-        await deleteActualDistance(viewingRunnerId || currentUser.id, distanceKey);
-        await deleteCompletedWorkout(viewingRunnerId || currentUser.id, distanceKey);
+        await deleteActualDistance(userIdToSave, distanceKey);
+        await deleteCompletedWorkout(userIdToSave, distanceKey);
     }
     
     // Save changes
@@ -1143,6 +1149,7 @@ function setupNavigation() {
     document.querySelector('.close').onclick = closeDistanceModal;
     document.getElementById('cancelDistance').onclick = closeDistanceModal;
     document.getElementById('confirmDistance').onclick = saveDistance;
+    document.getElementById('clearDistance').onclick = clearDayData;
     
     // Close modal when clicking outside
     document.getElementById('distanceModal').onclick = (e) => {
